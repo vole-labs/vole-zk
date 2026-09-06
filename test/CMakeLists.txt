@@ -39,8 +39,6 @@ add_test_case_with_run(bool bg_engine)
 
 # Arithmetic ZK
 add_test_case_with_run(arith abconversion)
-# Edabit setup is fixed-cost (~10 min release / ~hours debug); skip in
-# fast CI via `ctest -LE slow`.
 set_tests_properties(arith_abconversion PROPERTIES LABELS slow)
 add_test_case_with_run(arith zk_proof)
 add_test_case_with_run(arith ostriple)
