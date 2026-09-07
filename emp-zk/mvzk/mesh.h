@@ -68,6 +68,28 @@ public:
     }
   }
 
+  // Jointly sampled randomness: commit-then-open of one block per verifier,
+  // XORed. A rushing verifier cannot bias it.
+  void coin(block out[2], PRG &prg) {
+    struct { block r[2]; block salt; } msg;
+    prg.random_block(msg.r, 2);
+    prg.random_block(&msg.salt, 1);
+    block com[2];
+    Hash::hash_once(com, &msg, sizeof(msg));
+    std::vector<std::vector<uint8_t>> coms, got;
+    exchange_all(com, coms, 2 * sizeof(block));
+    exchange_all(&msg, got, sizeof(msg));
+    out[0] = msg.r[0]; out[1] = msg.r[1];
+    for (std::size_t j = 0; j < n; ++j) {
+      if (j == id) continue;
+      block c[2];
+      Hash::hash_once(c, got[j].data(), sizeof(msg));
+      if (memcmp(c, coms[j].data(), 2 * sizeof(block)) != 0) error("mvzk coin: commitment mismatch");
+      const block *r = reinterpret_cast<const block *>(got[j].data());
+      out[0] = out[0] ^ r[0]; out[1] = out[1] ^ r[1];
+    }
+  }
+
   // This party's share of sum_i <theta^i> where every theta^i is a fresh
   // additive sharing of zero dealt by verifier i; `cnt` values at once.
   template <typename T>

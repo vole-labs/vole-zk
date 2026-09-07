@@ -84,3 +84,8 @@ add_test(NAME mvzk_backend_cheat
          COMMAND ${PROJECT_SOURCE_DIR}/run_mvzk $<TARGET_FILE:test_mvzk_backend> 5 1 2 8 16384 1 1
          WORKING_DIRECTORY ${PROJECT_SOURCE_DIR})
 set_tests_properties(mvzk_backend_cheat PROPERTIES PASS_REGULAR_EXPRESSION "mvzk: multiplication check failed")
+add_mvzk_test(int_fp 5 1 2 16 16384)   # IntFp wrapper, 16^3 matmul + scalar ops
+add_test(NAME mvzk_int_fp_cheat
+         COMMAND ${PROJECT_SOURCE_DIR}/run_mvzk $<TARGET_FILE:test_mvzk_int_fp> 5 1 2 8 16384 1
+         WORKING_DIRECTORY ${PROJECT_SOURCE_DIR})
+set_tests_properties(mvzk_int_fp_cheat PROPERTIES PASS_REGULAR_EXPRESSION "mvzk: opened value does not match its MAC")

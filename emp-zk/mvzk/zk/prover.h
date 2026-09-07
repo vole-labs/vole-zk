@@ -35,6 +35,7 @@ public:
 
   std::vector<T> wiresVal;          // pending wires of the current packed sharing
   std::size_t wiresValPtr = 0;
+  uint64_t batchesDone = 0;
 
   Compress<T> *comp = nullptr;      // polynomial-compression helpers
   Lagrange<T> *lagrange = nullptr;
@@ -83,7 +84,16 @@ public:
       hashes[i]->put(&shares[i], (int64_t)T::size());
     }
     wiresValPtr = 0;
+    batchesDone++;
     if (multGatePtr >= multGateBufSz) verifyAuthTriple(auth, poly, ios);
+  }
+
+  // send opened values to every verifier (IntFp::reveal)
+  void revealValues(const std::vector<T> &vals, std::vector<IO **> &ios) {
+    for (std::size_t i = 0; i < n; ++i) {
+      ios[i][0]->send_data(vals.data(), (int64_t)(vals.size() * T::size()));
+      ios[i][0]->flush();
+    }
   }
 
   // record a multiplication triple (checked at a later batch boundary / flush)

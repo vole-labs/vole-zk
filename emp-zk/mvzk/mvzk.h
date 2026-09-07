@@ -9,4 +9,5 @@
 #include "emp-zk/mvzk/nvole.h"
 #include "emp-zk/mvzk/mesh.h"
 #include "emp-zk/mvzk/zk/backend.h"
+#include "emp-zk/mvzk/int_fp.h"
 #endif

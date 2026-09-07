@@ -72,6 +72,22 @@ public:
   void compute_mult(AuthShare *res, AuthShare *lhs, AuthShare *rhs) {
     verifier->share(res, lhs, rhs, auth, poly, ios);
   }
+  // lazily resolved multiplication inputs (see Verifier::Resolver)
+  void compute_mult(AuthShare *res, typename Verifier<IO, T, S>::Resolver resolve, bool *ready) {
+    verifier->share(res, std::move(resolve), ready, auth, poly, ios);
+  }
+  void auth_val_input(AuthShare *shr, bool *ready) { verifier->share(shr, auth, poly, ios, ready); }
+
+  // outputs: check wires against public values (verifiers), send opened values (prover)
+  void check_public(const std::vector<AuthShare> &sh, const std::vector<T> &claimed) {
+    verifier->checkPublic(sh, claimed, auth);
+  }
+  void reveal_send(const std::vector<T> &vals) { prover->revealValues(vals, ios); }
+  void reveal_recv(std::vector<T> &vals) {
+    ios[n_server][0]->recv_data(vals.data(), (int64_t)(vals.size() * T::size()));
+  }
+  uint64_t batches_done() const { return is_prover() ? prover->batchesDone : verifier->batchesDone; }
+
   void auth_val_mult_flush_prover() { prover->multFlush(auth, poly, ios); }
   void auth_val_mult_flush_verifier() { verifier->multFlush(auth, poly, ios); }
 

@@ -10,6 +10,7 @@
 #include "emp-zk/mvzk/zk/auth.h"
 #include "emp-zk/mvzk/zk/compress.h"
 #include "emp-zk/mvzk/mesh.h"
+#include <functional>
 
 namespace emp {
 namespace mvzk {
@@ -42,7 +43,11 @@ public:
   // that is the output of a multiplication carries its input wires so the
   // triple is recorded (inputs read) right before the output is filled
   std::vector<AuthShare *> wiresAuthShrs, wiresMultLeft, wiresMultRight;
+  std::vector<bool *> wiresReady;                 // optional per-wire "filled" flag
+  using Resolver = std::function<void(AuthShare &, AuthShare &)>;
+  std::vector<Resolver> wiresResolve;             // optional: computes the mult inputs at fill time
   std::size_t wiresBufPtr = 0;
+  uint64_t batchesDone = 0;
 
   Compress<T> *comp = nullptr;
   Lagrange<T> *lagrange = nullptr;
@@ -55,6 +60,7 @@ public:
     multGateRightWireVal.resize(multGateBufSz + k); multGateRightWireMac.resize(multGateBufSz + k);
     multGateOutWireVal.resize(multGateBufSz + k); multGateOutWireMac.resize(multGateBufSz + k);
     wiresAuthShrs.resize(k); wiresMultLeft.resize(k); wiresMultRight.resize(k);
+    wiresReady.resize(k); wiresResolve.resize(k);
     compressParam = 1 << logCompressParam;
     comp = new Compress<T>(logCompressParam);
     lagrange = new Lagrange<T>(compressParam);
@@ -95,8 +101,11 @@ public:
   }
 
   // ---------------- wire sharing ----------------
-  void share(AuthShare *shr, Auth<IO, T, S> *auth, Poly<T> *poly, std::vector<IO **> &ios) {
+  void share(AuthShare *shr, Auth<IO, T, S> *auth, Poly<T> *poly, std::vector<IO **> &ios,
+             bool *ready = nullptr) {
     wiresMultLeft[wiresBufPtr] = nullptr;
+    wiresResolve[wiresBufPtr] = nullptr;
+    wiresReady[wiresBufPtr] = ready;
     wiresAuthShrs[wiresBufPtr++] = shr;
     inputGateCount++;
     if (wiresBufPtr == k) shareBatch(auth, poly, ios);
@@ -115,6 +124,20 @@ public:
              Auth<IO, T, S> *auth, Poly<T> *poly, std::vector<IO **> &ios) {
     wiresMultLeft[wiresBufPtr] = left;
     wiresMultRight[wiresBufPtr] = right;
+    wiresResolve[wiresBufPtr] = nullptr;
+    wiresReady[wiresBufPtr] = nullptr;
+    wiresAuthShrs[wiresBufPtr++] = out;
+    if (wiresBufPtr == k) shareBatch(auth, poly, ios);
+  }
+
+  // multiplication gate whose inputs are computed lazily when the output's
+  // packed sharing arrives (used by the IntFp wrapper: inputs may be pending
+  // linear expressions of earlier wires); `ready` is set once `out` is filled
+  void share(AuthShare *out, Resolver resolve, bool *ready,
+             Auth<IO, T, S> *auth, Poly<T> *poly, std::vector<IO **> &ios) {
+    wiresMultLeft[wiresBufPtr] = nullptr;
+    wiresResolve[wiresBufPtr] = std::move(resolve);
+    wiresReady[wiresBufPtr] = ready;
     wiresAuthShrs[wiresBufPtr++] = out;
     if (wiresBufPtr == k) shareBatch(auth, poly, ios);
   }
@@ -129,13 +152,20 @@ public:
     for (std::size_t i = 0; i < wiresBufPtr; ++i) {
       AuthShare *out = wiresAuthShrs[i];
       if (out == nullptr) continue;
-      if (wiresMultLeft[i] == nullptr) { out->mac = m[i]; out->key = kk[i]; out->share = v[i]; continue; }
-      // multiplication: read the inputs before the output is written (they may alias)
-      AuthShare l = *wiresMultLeft[i], r = *wiresMultRight[i];
-      out->mac = m[i]; out->key = kk[i]; out->share = v[i];
-      mult(out, &l, &r);
+      if (wiresMultLeft[i] == nullptr && !wiresResolve[i]) {
+        out->mac = m[i]; out->key = kk[i]; out->share = v[i];
+      } else {
+        // multiplication: read the inputs before the output is written (they may alias)
+        AuthShare l, r;
+        if (wiresResolve[i]) { wiresResolve[i](l, r); wiresResolve[i] = nullptr; }
+        else { l = *wiresMultLeft[i]; r = *wiresMultRight[i]; }
+        out->mac = m[i]; out->key = kk[i]; out->share = v[i];
+        mult(out, &l, &r);
+      }
+      if (wiresReady[i] != nullptr) *wiresReady[i] = true;
     }
     wiresBufPtr = 0;
+    batchesDone++;
     if (multGatePtr >= multGateBufSz) verifyAuthTriple(auth, poly, ios);
   }
 
@@ -349,9 +379,7 @@ public:
   }
 
   // Reveal three authenticated values among the verifiers (paper Procedure 3):
-  // broadcast the shares; then every verifier i publishes o_i = mac_i - key_i
-  // - v*Delta_i masked with a share of zero, via commit-then-open, and all
-  // check sum_i o_i = 0 (i.e. the opened sum is the authenticated value).
+  // broadcast the shares, then check the MACs of the opened values.
   void openAndCheck(const T vals[3], const S macs[3], Auth<IO, T, S> *auth) {
     std::vector<std::vector<uint8_t>> got;
     mesh->exchange_all(vals, got, 3 * T::size());
@@ -361,27 +389,64 @@ public:
       const T *v = reinterpret_cast<const T *>(got[j].data());
       for (int c = 0; c < 3; ++c) open[c] = open[c] + v[c];
     }
+    std::vector<T> o(3);
+    for (int c = 0; c < 3; ++c) o[c] = macs[c].getHigh() - macs[c].getLow() - open[c] * auth->delta;
+    macCheckZero(o, "mvzk: MAC check of the opened triple failed");
+    if (open[2] != open[0] * open[1]) error("mvzk: multiplication check failed");
+  }
+
+  // Every verifier i holds o_i with (honestly) sum_i o_i = 0; publish it masked
+  // with a fresh share of zero via commit-then-open and check the sum.
+  void macCheckZero(const std::vector<T> &o_in, const char *what) {
+    std::size_t cnt = o_in.size();
     std::vector<T> theta;
-    mesh->template zero_shares<T>(theta, 3, prg);
-    struct { T o[3]; block salt; } msg;
-    for (int c = 0; c < 3; ++c) msg.o[c] = macs[c].getHigh() - macs[c].getLow() - open[c] * auth->delta + theta[c];
-    prg.random_block(&msg.salt, 1);
+    mesh->template zero_shares<T>(theta, cnt, prg);
+    std::vector<uint8_t> msg(cnt * T::size() + sizeof(block));
+    T *o = reinterpret_cast<T *>(msg.data());
+    for (std::size_t c = 0; c < cnt; ++c) o[c] = o_in[c] + theta[c];
+    prg.random_block(reinterpret_cast<block *>(msg.data() + cnt * T::size()), 1);
     block com[2];
-    Hash::hash_once(com, &msg, sizeof(msg));
-    std::vector<std::vector<uint8_t>> coms;
+    Hash::hash_once(com, msg.data(), (int64_t)msg.size());
+    std::vector<std::vector<uint8_t>> coms, got;
     mesh->exchange_all(com, coms, 2 * sizeof(block));
-    mesh->exchange_all(&msg, got, sizeof(msg));
-    T sum[3] = {msg.o[0], msg.o[1], msg.o[2]};
+    mesh->exchange_all(msg.data(), got, msg.size());
+    std::vector<T> sum(o, o + cnt);
     for (std::size_t j = 0; j < n; ++j) {
       if (j == id_party) continue;
       block c[2];
-      Hash::hash_once(c, got[j].data(), sizeof(msg));
+      Hash::hash_once(c, got[j].data(), (int64_t)msg.size());
       if (memcmp(c, coms[j].data(), 2 * sizeof(block)) != 0) error("mvzk: verifier opened a different value than committed");
-      const T *o = reinterpret_cast<const T *>(got[j].data());
-      for (int cc = 0; cc < 3; ++cc) sum[cc] = sum[cc] + o[cc];
+      const T *oj = reinterpret_cast<const T *>(got[j].data());
+      for (std::size_t cc = 0; cc < cnt; ++cc) sum[cc] = sum[cc] + oj[cc];
     }
-    for (int c = 0; c < 3; ++c) if (sum[c] != 0) error("mvzk: MAC check of the opened triple failed");
-    if (open[2] != open[0] * open[1]) error("mvzk: multiplication check failed");
+    for (std::size_t c = 0; c < cnt; ++c) if (sum[c] != 0) error(what);
+  }
+
+  // Check that authenticated wires equal public values `claimed` (all
+  // verifiers must hold the same claimed vector): one random linear
+  // combination with a jointly sampled coin, then a masked MAC check.
+  void checkPublic(const std::vector<AuthShare> &sh, const std::vector<T> &claimed, Auth<IO, T, S> *auth) {
+    std::size_t len = sh.size();
+    if (claimed.size() != len) error("mvzk checkPublic: size mismatch");
+    Hash h;
+    h.put(claimed.data(), (int64_t)(len * T::size()));
+    block d[2];
+    h.digest(d);
+    mesh->echo_check(d, "mvzk: verifiers hold different opened values");
+    block seed[2];
+    mesh->coin(seed, prg);
+    PRG cprg(seed);
+    std::vector<uint64_t> raw(len);
+    cprg.random_data(raw.data(), (int64_t)(len * sizeof(uint64_t)));
+    T mac(0, false), key(0, false), v(0, false);
+    for (std::size_t i = 0; i < len; ++i) {
+      T chi(raw[i]);
+      mac = mac + sh[i].mac * chi;
+      key = key + sh[i].key * chi;
+      v = v + claimed[i] * chi;
+    }
+    std::vector<T> o = {mac - key - v * auth->delta};
+    macCheckZero(o, "mvzk: opened value does not match its MAC");
   }
 
   // debug (test only): reconstruct Delta from the packed shares at verifier 0

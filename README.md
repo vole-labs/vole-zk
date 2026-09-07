@@ -134,11 +134,31 @@ F_p with p = 2^59 - 2^28 + 1, on top of vole's committed VOLE:
   broadcast-consistency echo among the verifiers, and the final opening
   of the compressed triple with a zero-share-masked, commit-then-open MAC
   check (Π_Online).
-- `zk/backend.h` — the circuit API `MvzkBackend<IO, FP59, FP59x2>`:
+- `zk/backend.h` — the low-level circuit API `MvzkBackend<IO, FP59, FP59x2>`:
   `param(log_n, log_k)`, `auth_val_input`, `compute_add`,
   `compute_mult`, `flush_wires`, `finalize`. Verifier-side outputs are
   filled when their packed sharing arrives (every `k`-th wire or at a
   flush); do not read them before that.
+- `int_fp.h` — the `IntFp`-style wire type on top of it, same shape as
+  `emp-zk-arith`'s `IntFp`: every party runs the same circuit code.
+  Verifier wires are handles to immutable slots; a linear combination of
+  wires whose packed sharing has not arrived yet is kept symbolically and
+  resolved when a multiplication or a reveal needs it, so no flush is
+  forced and packing stays full. Outputs are checked with a batched,
+  zero-share-masked MAC check among the verifiers (`reveal`,
+  `reveal(expected)`, `reveal_zero`, `batch_reveal*`).
+
+```cpp
+#include "emp-zk/mvzk/mvzk.h"
+using namespace emp::mvzk;
+// party: verifiers 0..n-1, prover n; ios[j] -> >= max(2, threads) sockets to party j
+setup_mvzk<NetIO>(party, threads, ios, log_n, log_k);   // n = 2^log_n, k = 2^log_k
+IntFp a(7, ALICE), b(11, ALICE), c(5, PUBLIC);           // ALICE = prover's witness
+IntFp d = a * b + c * 3 - a;                             // usable immediately on every party
+d.reveal(85);                                            // verifiers abort if false
+uint64_t v = (d * d).reveal();                           // opened value on all parties
+finalize_mvzk<NetIO>();                                  // batched multiplication check
+```
 
 Tests live in `test/mvzk/` and are (n+1)-party processes on localhost,
 started by the top-level `./run_mvzk <binary> <n+1> [args]` (party ids
