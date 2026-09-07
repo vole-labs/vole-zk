@@ -19,7 +19,7 @@ int main(int argc, char **argv) {
   bool cheat = (argc > 7) && atoi(argv[7]) != 0;
   int n = 1 << log_n;
   MeshIO mesh(party, n + 1, port, 2);
-  setup_mvzk<NetIO>(party, 1, mesh.ios, log_n, log_k, per_round);
+  setup_mvzk<NetIO>(party, 1, mesh.ios, log_n, log_k, per_round, 0, mesh.ctrl);
 
   // plaintext inputs from a fixed seed so every party can compute the expected outputs
   std::size_t N = dim * dim;

@@ -24,6 +24,7 @@ public:
   std::size_t k, n, compressParam;
   uint64_t inputGateCount = 0, multGateCount = 0, checkCount = 0;
   double timeVerifyAuth = 0.0;
+  bool skipLocalCheck = false;      // tests: let a cheating prover reach the verifiers' check
 
   std::vector<T> preAuthSharing;    // preAuthSharingNum * k secrets
   std::size_t preAuthSharingPtr;    // in packed sharings (k values)
@@ -262,12 +263,12 @@ public:
       ios[i][0]->flush();
     }
     T r = comp->challenge_point(hash, dig, diff);              // binds all 2m+2 values
-    if (lagrange->is_interpolation_point(r)) error("mvzk: challenge hits an interpolation point");
+    if (lagrange->is_interpolation_point(r)) mvzk_fail<IO>("mvzk: challenge hits an interpolation point");
     lagrange->computeLagCoeff(lag_low, lag_high, r);
     T x(0, false), y(0, false), z(0, false);
     for (std::size_t i = 0; i <= m; ++i) { x = x + val_x[i] * lag_low[i]; y = y + val_y[i] * lag_low[i]; }
     for (std::size_t i = 0; i <= 2 * m; ++i) z = z + poly_h[i] * lag_high[i];
-    if (z != x * y) error("mvzk prover: local multiplication check failed (bug)");
+    if (z != x * y && !skipLocalCheck) mvzk_fail<IO>("mvzk prover: local multiplication check failed (wrong triple recorded)");
 #ifdef MVZK_DEBUG
     debug_check(auth, ios, val_x[m], val_y[m], poly_h[m], "random pair");
     debug_check(auth, ios, x, y, z, "final");

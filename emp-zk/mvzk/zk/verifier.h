@@ -252,7 +252,7 @@ public:
     hash.digest(com_v);
     ios[n][0]->recv_data(coms.data(), (int64_t)(2 * n * sizeof(block)));
     if (memcmp(coms.data() + 2 * id_party, com_v, 2 * sizeof(block)) != 0)
-      error("mvzk: Fiat-Shamir commitment mismatch (prover sent a different transcript)");
+      mvzk_fail<IO>("mvzk: Fiat-Shamir commitment mismatch (prover sent a different transcript)");
     Hash hash_fs, transcript;                 // transcript: everything received in this check
     block dig[2];
     hash_fs.put(coms.data(), (int64_t)(2 * n * sizeof(block)));
@@ -350,7 +350,7 @@ public:
     val_y[m] = rec_val[2 * m + 1]; mac_y[m] = rec_mac[2 * m + 1];
 
     T r = comp->challenge_point(hash_fs, dig, diff);
-    if (lagrange->is_interpolation_point(r)) error("mvzk: challenge hits an interpolation point");
+    if (lagrange->is_interpolation_point(r)) mvzk_fail<IO>("mvzk: challenge hits an interpolation point");
     lagrange->computeLagCoeff(lag_low, lag_high, r);
     T xv(0, false), yv(0, false), zv(0, false);
     S xm, ym, zm;
@@ -392,7 +392,7 @@ public:
     std::vector<T> o(3);
     for (int c = 0; c < 3; ++c) o[c] = macs[c].getHigh() - macs[c].getLow() - open[c] * auth->delta;
     macCheckZero(o, "mvzk: MAC check of the opened triple failed");
-    if (open[2] != open[0] * open[1]) error("mvzk: multiplication check failed");
+    if (open[2] != open[0] * open[1]) mvzk_fail<IO>("mvzk: multiplication check failed");
   }
 
   // Every verifier i holds o_i with (honestly) sum_i o_i = 0; publish it masked
@@ -415,11 +415,11 @@ public:
       if (j == id_party) continue;
       block c[2];
       Hash::hash_once(c, got[j].data(), (int64_t)msg.size());
-      if (memcmp(c, coms[j].data(), 2 * sizeof(block)) != 0) error("mvzk: verifier opened a different value than committed");
+      if (memcmp(c, coms[j].data(), 2 * sizeof(block)) != 0) mvzk_fail<IO>("mvzk: verifier opened a different value than committed");
       const T *oj = reinterpret_cast<const T *>(got[j].data());
       for (std::size_t cc = 0; cc < cnt; ++cc) sum[cc] = sum[cc] + oj[cc];
     }
-    for (std::size_t c = 0; c < cnt; ++c) if (sum[c] != 0) error(what);
+    for (std::size_t c = 0; c < cnt; ++c) if (sum[c] != 0) mvzk_fail<IO>(what);
   }
 
   // Check that authenticated wires equal public values `claimed` (all

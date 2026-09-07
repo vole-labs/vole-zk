@@ -29,6 +29,7 @@ int main(int argc, char **argv) {
   MvzkBackend<NetIO, T, S> backend(party, threads, mesh.ios);
   auto t0 = clock_start();
   backend.param(log_n, log_k, per_round, peer_par);
+  backend.set_abort_channels(mesh.ctrl);
   double t_setup = time_from(t0);
   t0 = clock_start();
   if (party == n) {
@@ -45,6 +46,7 @@ int main(int argc, char **argv) {
     for (std::size_t i = 0; i < num; ++i) backend.compute_add(d[i], c[i], a[i]);
     for (std::size_t i = 0; i < num; ++i) if (i % 5 == 0) backend.compute_mult(d[i], d[i], b[i]);  // output aliases an input
     if (cheat) {   // claim a wrong product for the last gate (shared value != lhs * rhs)
+      backend.prover->skipLocalCheck = true;
       T wrong = a[0] * b[0] + T(1);
       backend.prover->mult(a[0], b[0], wrong);
       backend.prover->share(wrong, backend.auth, backend.poly, backend.ios);

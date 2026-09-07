@@ -167,6 +167,14 @@ uint64_t v = (d * d).reveal();                           // opened value on all 
 finalize_mvzk<NetIO>();                                  // batched multiplication check
 ```
 
+Failed checks abort cooperatively (`abort.h`): with one extra control
+socket per pair (`set_abort_channels` / the `ctrl` argument of
+`setup_mvzk`), the detecting party reports the reason to everyone and exits
+with code 1, the others print `peer j aborted: <reason>` and exit with code
+2, and `finalize` returns only once every party has finished, so the prover
+learns the verdict. Without control sockets a failed check still exits the
+detecting party, and its peers die on socket errors.
+
 Tests live in `test/mvzk/` and are (n+1)-party processes on localhost,
 started by the top-level `./run_mvzk <binary> <n+1> [args]` (party ids
 `0..n-1` are verifiers, `n` is the prover); ctest registers them as

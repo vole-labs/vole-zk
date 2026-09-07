@@ -24,6 +24,7 @@
 // verifier runs up to `peer_par` peers concurrently (default: all n-1). The
 // prover expands its n local copies concurrently as well.
 #include <emp-tool/emp-tool.h>
+#include "emp-zk/mvzk/abort.h"
 #include "vole/cvole.h"
 #include <future>
 #include <vector>
@@ -175,7 +176,7 @@ public:
       if (j == id) continue;
       if (ref < 0) { ref = j; continue; }
       if (memcmp(value_digest_[j].data(), value_digest_[ref].data(), 2 * sizeof(block)) != 0)
-        error("mvzk nVOLE: committed value differs across peers");
+        mvzk_fail<IO>("mvzk nVOLE: committed value differs across peers");
     }
   }
 

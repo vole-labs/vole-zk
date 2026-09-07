@@ -24,6 +24,7 @@ int main(int argc, char **argv) {
 
   MvzkBackend<NetIO, T, S> backend(party, threads, mesh.ios);
   backend.param(log_n, log_k, per_round, peer_par);
+  backend.set_abort_channels(mesh.ctrl);
   auto t0 = clock_start();
   if (party == n) {
     PRG prg;

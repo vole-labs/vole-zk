@@ -21,7 +21,7 @@ int main(int argc, char **argv) {
   bool cheat = (argc > 7) && atoi(argv[7]) != 0;
   int n = 1 << log_n;
   MeshIO mesh(party, n + 1, port, 2);
-  setup_mvzk<NetIO>(party, 1, mesh.ios, log_n, log_k, per_round);
+  setup_mvzk<NetIO>(party, 1, mesh.ios, log_n, log_k, per_round, 0, mesh.ctrl);
 
   std::vector<uint64_t> x(len), y(len), c(len);
   block seed = makeBlock(0x766563ULL, 0x696e745f6670ULL);

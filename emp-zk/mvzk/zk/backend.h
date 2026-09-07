@@ -5,6 +5,7 @@
 #include "emp-zk/mvzk/zk/auth.h"
 #include "emp-zk/mvzk/zk/prover.h"
 #include "emp-zk/mvzk/zk/verifier.h"
+#include "emp-zk/mvzk/abort.h"
 
 namespace emp {
 namespace mvzk {
@@ -17,6 +18,7 @@ public:
   MvzkBackend(std::size_t id_party_, std::size_t threads_, std::vector<IO **> ios_)
       : id_party(id_party_), threads(threads_), ios(ios_) {}
   ~MvzkBackend() {
+    delete guard;
     delete prover;
     delete verifier;
     delete auth;
@@ -45,6 +47,14 @@ public:
   }
 
   bool is_prover() const { return id_party == n_server; }
+
+  // Cooperative abort (abort.h): ctrl[j] is a socket to party j used only for
+  // abort / done notifications (nullptr for self). Optional; without it a
+  // failed check exits this party alone and the peers die on socket errors.
+  void set_abort_channels(std::vector<IO *> ctrl) {
+    delete guard;
+    guard = new AbortGuard<IO>((int)id_party, (int)n_server + 1, std::move(ctrl));
+  }
 
   // Verifier-side outputs (of auth_val_input and compute_mult) are filled when
   // the packed sharing they belong to arrives: at every k-th wire or at a
@@ -103,6 +113,7 @@ public:
   void finalize() {
     if (is_prover()) auth_val_mult_flush_prover();
     else auth_val_mult_flush_verifier();
+    if (guard) guard->stop();
   }
 
   T delta() { return auth->delta; }
@@ -124,6 +135,7 @@ public:
   Auth<IO, T, S> *auth = nullptr;
   Prover<IO, T, S> *prover = nullptr;
   Verifier<IO, T, S> *verifier = nullptr;
+  AbortGuard<IO> *guard = nullptr;
 };
 
 }  // namespace mvzk

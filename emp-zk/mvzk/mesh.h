@@ -15,6 +15,7 @@
 //                   relays the vector to all (paper Prep step 5, plus the relay
 //                   the online cross-check needs)
 #include <emp-tool/emp-tool.h>
+#include "emp-zk/mvzk/abort.h"
 #include <future>
 #include <vector>
 #include <cstring>
@@ -84,7 +85,7 @@ public:
       if (j == id) continue;
       block c[2];
       Hash::hash_once(c, got[j].data(), sizeof(msg));
-      if (memcmp(c, coms[j].data(), 2 * sizeof(block)) != 0) error("mvzk coin: commitment mismatch");
+      if (memcmp(c, coms[j].data(), 2 * sizeof(block)) != 0) mvzk_fail<IO>("mvzk coin: commitment mismatch");
       const block *r = reinterpret_cast<const block *>(got[j].data());
       out[0] = out[0] ^ r[0]; out[1] = out[1] ^ r[1];
     }
@@ -144,7 +145,7 @@ inline void nonces(std::size_t id, std::size_t n, std::vector<IO **> &ios,
     ios[n][0]->send_data(&c, sizeof(block));
     ios[n][0]->flush();
     ios[n][0]->recv_data(all.data(), (int64_t)(n * sizeof(block)));
-    if (memcmp(&all[id], &c, sizeof(block)) != 0) error("mvzk: prover altered my nonce");
+    if (memcmp(&all[id], &c, sizeof(block)) != 0) mvzk_fail<IO>("mvzk: prover altered my nonce");
   }
 }
 
