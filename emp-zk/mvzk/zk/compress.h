@@ -59,9 +59,9 @@ public:
   void challenge_stream(const block dig[2], std::size_t dim, std::vector<T> &out) {
     PRG prg(dig);
     std::vector<uint64_t> raw(dim);
-    prg.random_data(raw.data(), (int64_t)(dim * sizeof(uint64_t)));
+    T::sample_many(prg, raw.data(), dim);          // uniform in F_p (rejection sampling)
     out.resize(dim);
-    for (std::size_t i = 0; i < dim; ++i) out[i] = T(raw[i]);
+    for (std::size_t i = 0; i < dim; ++i) out[i] = T(raw[i], false);
   }
 
   // next challenge: dig <- H(dig || msg), point = dig mod p; aborts on an
@@ -71,7 +71,7 @@ public:
     hash.put(dig, 2 * sizeof(block));
     hash.put(msg.data(), (int64_t)(msg.size() * T::size()));
     hash.digest(dig);
-    T r((uint64_t)_mm_extract_epi64(dig[0], 0));
+    T r(T::from_digest(dig), false);                 // uniform in F_p; re-hashes on rejection
     if (is_interpolation_point(r)) error("mvzk: challenge hits an interpolation point");
     return r;
   }

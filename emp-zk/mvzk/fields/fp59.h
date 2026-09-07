@@ -69,11 +69,36 @@ public:
   template <typename IO> void send(IO *netio) { netio->send_data(&val, sizeof(uint64_t)); }
   template <typename IO> void recv(IO *netio) { netio->recv_data(&val, sizeof(uint64_t)); }
 
-  template <typename PRNG> void rand(PRNG &prg) {
+  // Uniform sampling by rejection: mask to 59 bits, retry if >= p. The
+  // rejection probability is (2^59 - p) / 2^59 ~ 2^-31, so the retry loop
+  // essentially never iterates; the result is exactly uniform (a plain
+  // 64-bit reduction mod p would be biased by ~2^-5).
+  template <typename PRNG> static uint64_t sample(PRNG &prg) {
     uint64_t raw;
-    prg.random_data(&raw, sizeof(uint64_t));
-    this->val = mod(raw);
+    do {
+      prg.random_data(&raw, sizeof(uint64_t));
+      raw &= PR_mask;
+    } while (raw >= PR);
+    return raw;
   }
+  template <typename PRNG> static void sample_many(PRNG &prg, uint64_t *out, std::size_t cnt) {
+    prg.random_data(out, (int64_t)(cnt * sizeof(uint64_t)));
+    for (std::size_t i = 0; i < cnt; ++i) {
+      out[i] &= PR_mask;
+      while (out[i] >= PR) { prg.random_data(&out[i], sizeof(uint64_t)); out[i] &= PR_mask; }
+    }
+  }
+  // Uniform element from a hash digest (Fiat-Shamir): low word of dig[0]
+  // masked to 59 bits; on rejection dig <- H(dig) and retry, deterministically
+  // on every party.
+  static uint64_t from_digest(block dig[2]) {
+    for (;;) {
+      uint64_t r = (uint64_t)_mm_extract_epi64(dig[0], 0) & PR_mask;
+      if (r < PR) return r;
+      Hash::hash_once(dig, dig, 2 * sizeof(block));
+    }
+  }
+  template <typename PRNG> void rand(PRNG &prg) { this->val = sample(prg); }
 
   block hash() { return Hash::hash_for_block(&val, sizeof(uint64_t)); }
 

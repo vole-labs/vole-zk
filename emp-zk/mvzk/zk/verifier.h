@@ -437,10 +437,10 @@ public:
     mesh->coin(seed, prg);
     PRG cprg(seed);
     std::vector<uint64_t> raw(len);
-    cprg.random_data(raw.data(), (int64_t)(len * sizeof(uint64_t)));
+    T::sample_many(cprg, raw.data(), len);           // uniform coefficients
     T mac(0, false), key(0, false), v(0, false);
     for (std::size_t i = 0; i < len; ++i) {
-      T chi(raw[i]);
+      T chi(raw[i], false);
       mac = mac + sh[i].mac * chi;
       key = key + sh[i].key * chi;
       v = v + claimed[i] * chi;

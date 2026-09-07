@@ -28,6 +28,25 @@ int main() {
     if (lazy.val != ref_mul(fa.val, 16)) { ++bad; break; }
   }
   std::cout << "FP59 scalar: " << (bad ? "MISMATCH" : "ok") << std::endl;
+  // ---- uniform sampling: in range, top bit balanced, digest path deterministic ----
+  {
+    const std::size_t N = 1 << 20;
+    std::vector<uint64_t> smp(N);
+    FP59::sample_many(prg, smp.data(), N);
+    std::size_t top = 0;
+    for (auto v : smp) { if (v >= FP59::PR) { ++bad; break; } top += (v >> 58) & 1; }
+    double frac = (double)top / N;                      // P[bit 58] = (p - 2^58) / p ~ 0.4999999995
+    if (frac < 0.495 || frac > 0.505) { ++bad; std::cout << "sample top-bit fraction " << frac << std::endl; }
+    FP59 a, b; a.rand(prg); b.rand(prg);
+    if (a.val >= FP59::PR || b.val >= FP59::PR) ++bad;
+    block d1[2], d2[2];
+    Hash::hash_once(d1, "mvzk", 4); memcpy(d2, d1, sizeof(d1));
+    if (FP59::from_digest(d1) != FP59::from_digest(d2) || FP59::from_digest(d1) >= FP59::PR) ++bad;
+    // a digest that must be rejected: low word = PR_mask (>= p) -> re-hash, still uniform and < p
+    d1[0] = makeBlock(0, FP59::PR_mask); d1[1] = zero_block; memcpy(d2, d1, sizeof(d1));
+    if (FP59::from_digest(d1) >= FP59::PR || FP59::from_digest(d1) != FP59::from_digest(d2)) ++bad;
+    std::cout << "FP59 sampling: " << (bad ? "MISMATCH" : "ok") << std::endl;
+  }
   // ---- FP59x2 lanes ----
   for (int it = 0; it < 100000 && !bad; ++it) {
     uint64_t a0, a1, b0, b1, c; prg.random_data(&a0, 8); prg.random_data(&a1, 8);
