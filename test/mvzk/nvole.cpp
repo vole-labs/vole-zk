@@ -14,9 +14,10 @@ int main(int argc, char **argv) {
   parse_party_and_port(argv, &party, &port);
   int log_n = (argc > 3) ? atoi(argv[3]) : 2;
   std::size_t per_round = (argc > 4) ? (std::size_t)atoll(argv[4]) : (1u << 14);
+  std::size_t threads = (argc > 5) ? (std::size_t)atoi(argv[5]) : 1;
+  bool bench = (argc > 6) && atoi(argv[6]) != 0;     // print per-phase timing, skip the O(n^2) relation check
   int n = 1 << log_n;
-  const std::size_t threads = 1;
-  MeshIO mesh(party, n + 1, port, 2);
+  MeshIO mesh(party, n + 1, port, std::max<std::size_t>(2, threads));
 
   MvzkNVole<NetIO, FP59, FP59x2> nv(party, n, threads, mesh.ios, per_round);
   auto t0 = clock_start();
@@ -36,7 +37,18 @@ int main(int argc, char **argv) {
     else            nv.extend_verifier(sec.data(), mp, kp);
     double t_ext = time_from(t0);
     if (party == n) std::cout << "extend " << round << ": " << u << " correlations/party in " << t_ext / 1000 << " ms" << std::endl;
+    if (bench && round == 1) {
+      auto &st = nv.stats;
+      if (party == n)
+        std::cout << "  prover: local expansions x" << n << " " << st.prover_local / 1000 << " ms, publish coms " << st.prover_publish / 1000 << " ms" << std::endl;
+      else if (party == 0 || party == n - 1)
+        std::cout << "  verifier " << party << ": wait coms " << st.wait_coms / 1000 << " ms, mesh wall " << st.mesh_wall / 1000
+                  << " ms [main arc " << st.arc_main / 1000 << " ms/" << st.peers_main << " peers, pool arc " << st.arc_pool / 1000 << " ms/" << st.peers_pool
+                  << " peers]; per direction: committer extend " << st.commit_extend / 1000 << " + hash " << st.commit_hash / 1000
+                  << ", verifier extend " << st.verify_extend / 1000 << " + check " << st.verify_check / 1000 << " ms (summed over peers)" << std::endl;
+    }
 
+    if (bench) continue;
     // ---- correctness (test only): prover sends u^i to verifier i; every
     // verifier i sends (u^i, M^i_j) to each j, who checks against K^j_i, Delta_j.
     if (party == n) {

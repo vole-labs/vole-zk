@@ -51,6 +51,16 @@ public:
   std::vector<block> prog_seeds;
   std::vector<CVoleFp<IO, FP, FPS> *> local; // king-local reproduction per verifier
 
+  // timing of the last extend (microseconds), for benchmarks
+  struct Stats {
+    double prover_local = 0, prover_publish = 0;          // prover
+    double wait_coms = 0, mesh_wall = 0;                  // verifier
+    double arc_main = 0, arc_pool = 0;                    // busy time of the two mesh threads
+    double commit_extend = 0, commit_hash = 0;            // summed over peers (both threads)
+    double verify_extend = 0, verify_check = 0;
+    std::size_t peers_main = 0, peers_pool = 0;
+  } stats;
+
   // `per_round` selects vole's LPN scale (outputs per round); extends deliver
   // `rounds_per_extend` rounds at a time.
   MvzkNVole(int id_, int n_, std::size_t threads_, std::vector<IO **> &ios_,
@@ -102,29 +112,42 @@ public:
   // ---------------- one extend ----------------
   // Prover: secrets_all[i][0..usable) <- u^i for every verifier i.
   void extend_prover(std::vector<FP *> &secrets_all) {
+    stats = Stats();
+    auto t0 = clock_start();
     std::vector<FP> x(x_buf());
     std::vector<std::vector<FP>> com(n, std::vector<FP>(cn));
     for (int i = 0; i < n; ++i) {
       local[i]->extend_inplace_local(x.data(), com[i].data(), rounds);
       std::copy(x.begin(), x.begin() + usable(), secrets_all[i]);
     }
+    stats.prover_local = time_from(t0);
+    t0 = clock_start();
     // publish every verifier's commitment to every verifier
     for (int j = 0; j < n; ++j) {
       for (int i = 0; i < n; ++i)
         ios[j][0]->send_data(com[i].data(), (int64_t)(cn * sizeof(FP)));
       ios[j][0]->flush();
     }
+    stats.prover_publish = time_from(t0);
   }
 
   // Verifier: secrets[0..usable) <- u^id, macs[j] <- M^id_j, keys[j] <- K^id_j
   // (entries for j == id are left untouched).
   void extend_verifier(FP *secrets, std::vector<FP *> &macs, std::vector<FP *> &keys) {
+    stats = Stats();
+    auto t0 = clock_start();
     for (int i = 0; i < n; ++i) {
       com_pub[i].resize(cn);
       ios[n][0]->recv_data(com_pub[i].data(), (int64_t)(cn * sizeof(FP)));
     }
+    stats.wait_coms = time_from(t0);
     value_digest_.assign(n, std::vector<block>(2, zero_block));
+    t0 = clock_start();
+    for (int q = 0; q < 4; ++q) tm_main_[q] = tm_pool_[q] = 0;
     mesh_run(/*is_setup=*/false, secrets, &macs, &keys);
+    stats.mesh_wall = time_from(t0);
+    stats.commit_extend = tm_main_[0] + tm_pool_[0]; stats.commit_hash = tm_main_[1] + tm_pool_[1];
+    stats.verify_extend = tm_main_[2] + tm_pool_[2]; stats.verify_check = tm_main_[3] + tm_pool_[3];
     // Every committer instance of this party reproduces the same u^id; check the
     // per-peer digests agree (they were written on two threads, see commit_round).
     int ref = -1;
@@ -151,21 +174,25 @@ private:
     if (n == 1) secrets_writer_ = -1;
 
     auto fut = pool->enqueue([this, dest_back, is_setup, secrets, macs, keys]() {
+      auto t0 = clock_start();
       int stop = (dest_back == 0) ? (n - 1) : (dest_back - 1);
       int j = (id == 0) ? (n - 1) : (id - 1);
       while (j != stop) {
         if (is_setup) setup_with(j);
-        else extend_with(j, secrets, *macs, *keys);
+        else { extend_with(j, secrets, *macs, *keys, false); stats.peers_pool++; }
         j = (j == 0) ? (n - 1) : (j - 1);
       }
+      stats.arc_pool = time_from(t0);
     });
+    auto t0 = clock_start();
     int stop = (dest_frnt == n - 1) ? 0 : (dest_frnt + 1);
     int j = (id == n - 1) ? 0 : (id + 1);
     while (j != stop) {
       if (is_setup) setup_with(j);
-      else extend_with(j, secrets, *macs, *keys);
+      else { extend_with(j, secrets, *macs, *keys, true); stats.peers_main++; }
       j = (j == n - 1) ? 0 : (j + 1);
     }
+    stats.arc_main = time_from(t0);
     fut.get();
   }
 
@@ -185,16 +212,22 @@ private:
     ios[j][0]->flush();
   }
 
-  void extend_with(int j, FP *secrets, std::vector<FP *> &macs, std::vector<FP *> &keys) {
-    if (id > j) { commit_round(j, secrets, macs[j]); verify_round(j, keys[j]); }
-    else        { verify_round(j, keys[j]); commit_round(j, secrets, macs[j]); }
+  void extend_with(int j, FP *secrets, std::vector<FP *> &macs, std::vector<FP *> &keys, bool main_thread) {
+    double *t = main_thread ? tm_main_ : tm_pool_;
+    if (id > j) { commit_round(j, secrets, macs[j], t); verify_round(j, keys[j], t); }
+    else        { verify_round(j, keys[j], t); commit_round(j, secrets, macs[j], t); }
+    if (main_thread) {   // fold the pool thread's numbers in after the join (see mesh_run caller)
+    }
   }
+  double tm_main_[4] = {0, 0, 0, 0}, tm_pool_[4] = {0, 0, 0, 0};   // commit_extend, commit_hash, verify_extend, verify_check
 
   // committer side with peer j: u^id (value lane) and M^id_j (MAC lane)
-  void commit_round(int j, FP *secrets, FP *macs_j) {
+  void commit_round(int j, FP *secrets, FP *macs_j, double *tm) {
     std::vector<FPS> x(x_buf());
     std::vector<FPS> com(cn);
+    auto t0 = clock_start();
     fwd[j]->extend_inplace_recv(x.data(), com.data(), rounds);
+    tm[0] += time_from(t0);
     const std::size_t u = usable();
     for (std::size_t l = 0; l < u; ++l) macs_j[l] = x[l].getLow();
     if (j == secrets_writer_)
@@ -203,16 +236,22 @@ private:
     Hash h;
     for (std::size_t l = 0; l < u; ++l) { FP v = x[l].getHigh(); h.put(&v.val, sizeof(v.val)); }
     h.digest(value_digest_[j].data());
+    t0 = clock_start();
     fwd[j]->consistency_send_machash(com.data(), cn);
+    tm[1] += time_from(t0);
   }
 
   // verifier side with peer j: K^id_j, checked against the prover's com^j
-  void verify_round(int j, FP *keys_j) {
+  void verify_round(int j, FP *keys_j, double *tm) {
     std::vector<FP> x(x_buf());
     std::vector<FP> com(cn);
+    auto t0 = clock_start();
     inv[j]->extend_inplace_send(x.data(), com.data(), rounds);
+    tm[2] += time_from(t0);
     std::copy(x.begin(), x.begin() + usable(), keys_j);
+    t0 = clock_start();
     inv[j]->consistency_check_pub(com.data(), com_pub[j].data(), cn);
+    tm[3] += time_from(t0);
   }
 };
 
