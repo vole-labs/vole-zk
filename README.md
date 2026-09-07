@@ -1,14 +1,17 @@
 # EMP-zk
-![build](https://github.com/emp-toolkit/emp-zk/workflows/build/badge.svg)
-[![CodeQL](https://github.com/emp-toolkit/emp-zk/actions/workflows/codeql.yml/badge.svg)](https://github.com/emp-toolkit/emp-zk/actions/workflows/codeql.yml)
+![build](https://github.com/vole-labs/vole-zk/workflows/build/badge.svg)
+[![CodeQL](https://github.com/vole-labs/vole-zk/actions/workflows/codeql.yml/badge.svg)](https://github.com/vole-labs/vole-zk/actions/workflows/codeql.yml)
 
 <img src="https://raw.githubusercontent.com/emp-toolkit/emp-readme/main/art/logo-full.jpg" width=300px/>
 
 > **Which version do I want?**
 >
 > - **Existing projects pinned to a published release: stay on `v0.3.x`** —
->   `python3 install.py --tool=v0.3.x --ot=v0.3.x --zk=v0.3.x`
->   reproduces the prior emp-zk line. Bug fixes will be backported.
+>   upstream emp-zk's `python3 install.py --tool=v0.3.x --ot=v0.3.x --zk=v0.3.x`
+>   reproduces the prior emp-zk line. This repository's `vole-backend`
+>   branch is that line with its VOLE layer replaced by vole-labs/vole
+>   (emp-tool / emp-ot 0.3.0 vendored through vole); it is slower than
+>   `main` on Boolean circuits and kept only for 0.3-era API users.
 > - **New projects, or willing to migrate: track `main`** — the C++20
 >   BooleanContext line. `emp-zk-bool` is a native `BooleanContext`
 >   (`ZKBoolContext`) driven by an explicit `ZKBoolSession` handle — no global
@@ -69,45 +72,92 @@ The `emp-zk::emp-zk` target transitively pulls in `emp-ot::emp-ot` and
 ctest --test-dir build --output-on-failure
 ```
 
-Tests under `test/bool/`, `test/arith/`, `test/vole/`, and `test/ram/`
-exercise every module end-to-end: Boolean / arithmetic ZK,
-polynomial / inner-product proofs, SHA-256 + LowMC circuits, edabit
-bool↔arith conversion, VOLE bootstrap (cope / lpn / base_svole /
-vole_triple / vole_f2k_triple), and RAM ZK (read-only, read-write,
-extended). Two-party tests are driven by the top-level `./run`
-wrapper (spawns party 1 then party 2 on localhost).
+Tests under `test/bool/`, `test/arith/`, and `test/ram-zk/` exercise every
+module end-to-end: Boolean / arithmetic ZK (single-socket and the
+two-socket background-producer modes), polynomial / inner-product proofs,
+SHA-256, edabit bool↔arith conversion, and RAM / ROM / set ZK. The VOLE
+and COT primitives themselves are tested in `thirdparty/vole` and in
+emp-ot. Two-party tests are driven by the top-level `./run` wrapper,
+which picks a random port and starts party 1 then party 2 on localhost.
+`arith_abconversion` carries the `slow` label (`ctest -LE slow` skips it).
 
-For a two-machine run: `./bin/test_bool_<name> 1 <port>` on host A and
-`./bin/test_bool_<name> 2 <port>` on host B; edit the test source if
-the IP needs to be other than `127.0.0.1`.
+Party and endpoint are read from the command line and environment:
+`<binary> 1` is ALICE (prover, listens), `<binary> 2` is BOB (verifier,
+connects); `EMP_PORT` sets the port (default 12345) and `EMP_PEER_IP` the
+address BOB connects to (default 127.0.0.1). For a two-machine run:
+
+```bash
+EMP_PORT=12345 ./build/test_bool_example 1                      # host A
+EMP_PORT=12345 EMP_PEER_IP=<host A> ./build/test_bool_example 2  # host B
+```
+
+## Threads, background producers, and sockets
+
+Both engines take a thread count for their own work (batched checks,
+vectorized gates) and a separate count for the correlation producer:
+`ZKBoolSession(io, party, expected_cots, n_threads, cot_io, cot_threads)`
+and `setup_zk_arith(io, party, threads, expected_vole, vole_io, vole_threads)`.
+
+- With a second socket (`cot_io` / `vole_io`) the producer runs in a
+  background thread on that socket and the engine drains a pipe, so
+  correlation rounds overlap the proof instead of stalling it. Without
+  one, rounds run inline on the main socket whenever the buffer empties.
+- `vole_threads` / `cot_threads` size the producer's own worker pool. vole
+  sends each worker's MPFSS trees on its own connection, so for
+  `vole_threads > 1` the parties open `vole_threads - 1` extra TCP
+  connections, negotiated over the primary socket on OS-assigned ports.
+  Across machines, allow those ephemeral ports between the two hosts;
+  with a non-`NetIO` channel (e.g. TLS) vole falls back to one worker.
+- `expected_cots` still prepays the Boolean COTs (SilentFerret).
+  `expected_vole` is accepted for API compatibility but vole has no
+  prepay, so it has no effect.
+
+## Benchmarks
+
+`-DEMP_ZK_BUILD_BENCHMARKS=ON` builds the throughput drivers under
+`build/bench/` (not registered with ctest):
+
+```bash
+./run ./build/bench/bench_bool_circuit_scalability  20 8   # log2(gates/100), threads
+./run ./build/bench/bench_arith_circuit_scalability 24 8   # log2(multiplications), threads
+```
 
 ## Performance
 
-The test is done by two AWS EC2 m5.2xlarge servers with throttled network.
+Measured on `main` at vole `4088a70`, both parties on one AWS EC2 instance
+(32 vCPU AMD EPYC 9R45, Ubuntu 24.04, GCC 13, `-march=native`), localhost,
+single socket per session, best of two or three runs. Bandwidth caps were
+applied with `tc tbf` on the loopback. "Threads" is the engine thread count
+with the producer pool set to the same value.
 
-### Throughput of circuit-based ZK protocol
+#### Boolean circuits (105M gates), million gates per second
 
-All values are "million gates per second".
+|Threads|10 Mbps|50 Mbps|Localhost|
+|-------|-------|-------|---------|
+|1|8.2|39.7|42|
+|2|8.2|40.0|46|
+|4|8.2|40.2|61|
+|8|8.2|40.3|74|
 
-#### Boolean circuits
+At 10 Mbps the proof is bandwidth-bound (about 1 bit per AND gate plus
+the COT corrections) and threads make no difference.
 
-|Threads|10 Mbps|20 Mbps|30 Mbps|50 Mbps|Localhost|
-|-------|-------|-------|-------|-------|---------|
-|1|5.1|7.8|8.6|8.6|8.6|
-|2|6|10|12.9|14.3|13.6|
-|3|6.3|10.9|14.5|17.3|18|
-|4|6.4|11.4|15.1|19|19.4|
+#### Arithmetic circuits (16.8M multiplications), million multiplications per second
 
-#### Arithmetic circuits
+|Threads|Localhost|
+|-------|---------|
+|1|9.7|
+|2|13.8|
+|4|17.9|
+|8|20.5|
 
-|Threads|100 Mbps|500 Mbps|1 Gbps|2 Gbps|Localhost|
-|-------|-------|-------|-------|-------|---------|
-|1|1.4|4.8|6.8|7.8|7.8|
-|2|1.4|5.6|8.7|10.2|10.4|
-|3|1.4|5.9|9.3|11.7|12.5|
+These include the one-time VOLE setup (0.2 to 0.5 s depending on threads);
+steady-state throughput is higher. Bandwidth-capped arithmetic numbers for
+this VOLE backend have not been re-measured yet.
 
-(Numbers measured on the v0.3.x line; `main` runs the same protocols,
-so re-measured numbers should be in the same ballpark.)
+For reference, the v0.3.x line on two m5.2xlarge machines reached 8.6M
+Boolean gates and 7.8M multiplications per second single-threaded on
+localhost.
 
 ## [Acknowledgement, Reference, and Questions](https://github.com/emp-toolkit/emp-readme/blob/main/README.md#citation)
 
