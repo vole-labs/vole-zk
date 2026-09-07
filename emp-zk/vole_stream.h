@@ -25,14 +25,24 @@
 #include "vole/vole_f2k.h"
 #include "emp-ot/emp-ot.h"
 #include "emp-zk/emp-zk-bool/bool_io.h"
+#include <arpa/inet.h>
+#include <netinet/in.h>
+#include <sys/socket.h>
+#include <unistd.h>
 #include <memory>
+#include <string>
 #include <vector>
 
 namespace emp {
 
 // vole's MPFSS expansion sends each worker thread's trees on its own channel
-// (ios[t]). Open `threads - 1` duplex siblings of the primary NetIO for the
-// extra workers; both parties do this symmetrically at construction. When the
+// (ios[t]). Open `threads - 1` extra TCP connections for the extra workers,
+// symmetrically on both parties at construction: the party whose primary
+// NetIO is the server listens on an OS-assigned (ephemeral) port, tells the
+// peer that port over the primary channel, and the peer connects. No fixed
+// port offsets, so nothing can collide with a caller's other sockets, and no
+// settle-time sleeps (NetIO::make_sibling re-listens on the primary port and
+// pauses 0.1 s per call, which adds up at higher thread counts). When the
 // primary is not a NetIO (TLS, a custom channel) vole runs on one worker.
 // Sibling traffic is vole's own OT-extension / MPFSS data; the emp-zk
 // transcript digest lives on the primary channel, as it does for the
@@ -41,6 +51,40 @@ struct VoleChannels {
   std::vector<std::unique_ptr<NetIO>> siblings;
   std::vector<IOChannel *> ios;
   int threads = 1;
+
+  static int listen_ephemeral_(uint16_t &port) {
+    int ls = socket(AF_INET, SOCK_STREAM, 0);
+    if (ls < 0) error("VoleChannels: socket()");
+    int one = 1;
+    setsockopt(ls, SOL_SOCKET, SO_REUSEADDR, &one, sizeof(one));
+    sockaddr_in a{};
+    a.sin_family = AF_INET;
+    a.sin_addr.s_addr = htonl(INADDR_ANY);
+    a.sin_port = 0;
+    if (bind(ls, (sockaddr *)&a, sizeof(a)) < 0) error("VoleChannels: bind()");
+    if (listen(ls, 1) < 0) error("VoleChannels: listen()");
+    socklen_t len = sizeof(a);
+    getsockname(ls, (sockaddr *)&a, &len);
+    port = ntohs(a.sin_port);
+    return ls;
+  }
+  static int connect_to_(const std::string &addr, uint16_t port) {
+    for (int attempt = 0; attempt < 2000; ++attempt) {   // ~20 s worst case
+      int fd = socket(AF_INET, SOCK_STREAM, 0);
+      if (fd < 0) error("VoleChannels: socket()");
+      sockaddr_in a{};
+      a.sin_family = AF_INET;
+      a.sin_port = htons(port);
+      if (inet_pton(AF_INET, addr.c_str(), &a.sin_addr) != 1)
+        error("VoleChannels: peer address must be an IPv4 literal");
+      if (connect(fd, (sockaddr *)&a, sizeof(a)) == 0) return fd;
+      close(fd);
+      usleep(10000);
+    }
+    error("VoleChannels: could not connect sibling channel");
+    return -1;
+  }
+
   VoleChannels(IOChannel *primary, int want) {
     threads = want < 1 ? 1 : want;
     // Everything queued on the primary (e.g. the engine's staged gate bits)
@@ -53,7 +97,23 @@ struct VoleChannels {
     auto *net = dynamic_cast<NetIO *>(inner);
     if (net == nullptr) { threads = 1; return; }
     for (int t = 1; t < threads; ++t) {
-      siblings.push_back(net->make_sibling());
+      int fd;
+      if (net->is_server) {
+        uint16_t port = 0;
+        int ls = listen_ephemeral_(port);
+        primary->send_data(&port, sizeof(port));
+        primary->flush();
+        sockaddr_in peer{};
+        socklen_t plen = sizeof(peer);
+        fd = accept(ls, (sockaddr *)&peer, &plen);
+        close(ls);
+        if (fd < 0) error("VoleChannels: accept()");
+      } else {
+        uint16_t port = 0;
+        primary->recv_data(&port, sizeof(port));
+        fd = connect_to_(net->addr_, port);
+      }
+      siblings.emplace_back(new NetIO(fd, /*quiet=*/true));
       ios.push_back(siblings.back().get());
     }
   }
