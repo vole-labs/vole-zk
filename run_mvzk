@@ -1,0 +1,30 @@
+#!/bin/bash
+# Launch an (n+1)-party mvzk test on localhost: run_mvzk <binary> <n_parties> [args...]
+# Party ids 0..n_parties-1 (the last one is the prover); a random port base is
+# passed positionally after the party id. Exit status is the OR of all parties.
+bin=$1; P=$2; shift 2
+# port range: (P*P) pairs x up to 9 sockets; pick a base whose range is free
+span=$(( P * P * 9 ))
+for try in 1 2 3 4 5 6 7 8; do
+  port=$(( 20000 + (RANDOM % 400) * 100 ))
+  if command -v ss >/dev/null 2>&1; then
+    busy=$(ss -Htan 2>/dev/null | awk -v lo=$port -v hi=$((port + span)) '{split($4, a, ":"); p = a[length(a)]; if (p >= lo && p < hi) c++} END {print c + 0}')
+    [ "$busy" -eq 0 ] && break
+  else
+    break
+  fi
+done
+pids=()
+for ((p = 0; p < P - 1; p++)); do
+  "$bin" $p $port "$@" > /tmp/mvzk_party_$p.log 2>&1 &
+  pids+=($!)
+done
+"$bin" $((P - 1)) $port "$@"
+rc=$?
+codes="$((P - 1)):$rc"
+for ((p = 0; p < P - 1; p++)); do wait ${pids[$p]}; c=$?; codes="$codes $p:$c"; [ $c -ne 0 ] && rc=1; done
+if [ $rc -ne 0 ]; then
+  echo "exit codes (party:code): $codes"
+  for ((p = 0; p < P - 1; p++)); do echo "--- party $p log"; tail -5 /tmp/mvzk_party_$p.log; done
+fi
+exit $rc

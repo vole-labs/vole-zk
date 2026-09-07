@@ -57,3 +57,46 @@ add_test_case_with_run(arith sis)
 add_test_case_with_run(ram-zk ram_test)
 add_test_case_with_run(ram-zk rom_test)
 add_test_case_with_run(ram-zk set_test)
+
+# ---------------------------------------------------------------------
+# Multi-verifier ZK (emp-zk/mvzk): (n+1)-party tests launched by ../run_mvzk
+# ---------------------------------------------------------------------
+function(add_mvzk_test name nparties)
+    set(target test_mvzk_${name})
+    set(_src mvzk/${name}.cpp)
+    if(NOT EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/${_src})   # e.g. int_fp_primal -> int_fp.cpp
+        string(REGEX REPLACE "_[a-z]+$" "" _base ${name})
+        set(_src mvzk/${_base}.cpp)
+    endif()
+    add_executable(${target} ${_src})
+    target_link_libraries(${target} PRIVATE emp-zk::emp-zk)
+    set_target_properties(${target} PROPERTIES
+        RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}")
+    if(${nparties} GREATER 1)
+        add_test(NAME mvzk_${name}
+                 COMMAND ${PROJECT_SOURCE_DIR}/run_mvzk $<TARGET_FILE:${target}> ${nparties} ${ARGN}
+                 WORKING_DIRECTORY ${PROJECT_SOURCE_DIR})
+    else()
+        add_test(NAME mvzk_${name} COMMAND ${target} WORKING_DIRECTORY ${PROJECT_SOURCE_DIR})
+    endif()
+endfunction()
+add_mvzk_test(fields_poly 1)
+add_mvzk_test(nvole 5 2 16384)        # 4 verifiers + prover, log_n = 2, 2^14 per round
+add_mvzk_test(backend 5 1 2 12 16384)  # 4 verifiers + prover, k = 2, 2^12+3 mults
+add_mvzk_test(mat_mult 5 1 2 32 16384) # 32^3 mults
+# soundness: a prover claiming a wrong product must be rejected by the verifiers
+add_test(NAME mvzk_backend_cheat
+         COMMAND ${PROJECT_SOURCE_DIR}/run_mvzk $<TARGET_FILE:test_mvzk_backend> 5 1 2 8 16384 1 1
+         WORKING_DIRECTORY ${PROJECT_SOURCE_DIR})
+set_tests_properties(mvzk_backend_cheat PROPERTIES PASS_REGULAR_EXPRESSION "mvzk: multiplication check failed" FAIL_REGULAR_EXPRESSION "peer closed")
+add_mvzk_test(int_fp 5 1 2 16 16384)   # IntFp wrapper, 16^3 matmul + scalar ops
+add_test(NAME mvzk_int_fp_cheat
+         COMMAND ${PROJECT_SOURCE_DIR}/run_mvzk $<TARGET_FILE:test_mvzk_int_fp> 5 1 2 8 16384 1
+         WORKING_DIRECTORY ${PROJECT_SOURCE_DIR})
+set_tests_properties(mvzk_int_fp_cheat PROPERTIES PASS_REGULAR_EXPRESSION "mvzk: opened value does not match its MAC" FAIL_REGULAR_EXPRESSION "peer closed")
+add_mvzk_test(int_fp_vec 5 1 2 1000 16384)   # IntFpVec element-wise API
+add_mvzk_test(int_fp_primal 5 1 2 16 0)      # IntFp on the primal n-party VOLE (default backend)
+add_test(NAME mvzk_int_fp_vec_cheat
+         COMMAND ${PROJECT_SOURCE_DIR}/run_mvzk $<TARGET_FILE:test_mvzk_int_fp_vec> 5 1 2 100 16384 1
+         WORKING_DIRECTORY ${PROJECT_SOURCE_DIR})
+set_tests_properties(mvzk_int_fp_vec_cheat PROPERTIES PASS_REGULAR_EXPRESSION "mvzk: opened value does not match its MAC" FAIL_REGULAR_EXPRESSION "peer closed")

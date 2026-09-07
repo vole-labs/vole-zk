@@ -112,6 +112,81 @@ and `setup_zk_arith(io, party, threads, expected_vole, vole_io, vole_threads)`.
   `expected_vole` is accepted for API compatibility but vole has no
   prepay, so it has no effect.
 
+## Multi-verifier ZK (`emp-zk/mvzk`)
+
+`emp-zk/mvzk` implements the multi-verifier zero-knowledge protocol of
+[Escudero, Polychroniadou, Song, Weng](https://eprint.iacr.org/2024/997)
+(one prover, `n` verifiers, up to `t = n - k` of them corrupt) over
+F_p with p = 2^59 - 2^28 + 1, on top of vole's n-party VOLEs (primal-LPN
+by default, committed dual-LPN as an alternative):
+
+- `nvole_primal.h` (default) — the programmable n-party VOLE of the paper
+  (Π_nVOLE) on vole's primal-LPN `MVoleFp`: every pair of verifiers runs a
+  plain `VoleTriple` at the primal rate, a verifier reuses one programming
+  seed towards all peers, the prover regenerates every u^i locally, and the
+  verifiers run the paper's consistency check (fold with a fresh coin,
+  zero-sharings, commit-and-open) after every extension. Uses
+  Wolverine's F_p LPN parameters.
+- `nvole.h` (`NVoleKind::Committed`) — the same interface on vole's
+  dual-LPN committed VOLE `CVoleFp`: the prover's published commitments
+  bind each verifier to a single input, no interactive consistency check,
+  LPN scale set by `vole_per_round`, pairs run concurrently (`peer_par`).
+  Kept for comparison and for memory-constrained settings.
+- `zk/auth.h` — packed-Shamir reinterpretation of the VOLE outputs into
+  authenticated additive sharings of `k` values at a time (Π_Prep);
+  fresh Fiat-Shamir nonces after every VOLE extension.
+- `zk/prover.h`, `zk/verifier.h`, `zk/compress.h` — wire sharing, the
+  batched multiplication check (inner-product reduction, 16-way
+  polynomial compression, Fiat-Shamir over all prover messages), a
+  broadcast-consistency echo among the verifiers, and the final opening
+  of the compressed triple with a zero-share-masked, commit-then-open MAC
+  check (Π_Online).
+- `zk/backend.h` — the low-level circuit API `MvzkBackend<IO, FP59, FP59x2>`:
+  `param(log_n, log_k)`, `auth_val_input`, `compute_add`,
+  `compute_mult`, `flush_wires`, `finalize`. Verifier-side outputs are
+  filled when their packed sharing arrives (every `k`-th wire or at a
+  flush); do not read them before that.
+- `int_fp.h` — the `IntFp`-style wire type on top of it, same shape as
+  `emp-zk-arith`'s `IntFp`: every party runs the same circuit code.
+  Verifier wires are handles to immutable slots; a linear combination of
+  wires whose packed sharing has not arrived yet is kept symbolically and
+  resolved when a multiplication or a reveal needs it, so no flush is
+  forced and packing stays full. Outputs are checked with a batched,
+  zero-share-masked MAC check among the verifiers (`reveal`,
+  `reveal(expected)`, `reveal_zero`, `batch_reveal*`). `int_fp_vec.h`
+  adds `IntFpVec` with emp-zk-arith's element-wise API (`+ - *` with
+  vectors, public scalars and public vectors, `operator[]`, `sum`, `dot`,
+  `compose` / `decompose`, batched `reveal` / `reveal_check`); it is a
+  convenience layer, packing is already done by the backend.
+
+```cpp
+#include "emp-zk/mvzk/mvzk.h"
+using namespace emp::mvzk;
+// party: verifiers 0..n-1, prover n; ios[j] -> >= max(2, threads) sockets to party j
+setup_mvzk<NetIO>(party, threads, ios, log_n, log_k);   // n = 2^log_n, k = 2^log_k
+IntFp a(7, ALICE), b(11, ALICE), c(5, PUBLIC);           // ALICE = prover's witness
+IntFp d = a * b + c * 3 - a;                             // usable immediately on every party
+d.reveal(85);                                            // verifiers abort if false
+uint64_t v = (d * d).reveal();                           // opened value on all parties
+finalize_mvzk<NetIO>();                                  // batched multiplication check
+```
+
+Failed checks abort cooperatively (`abort.h`): with one extra control
+socket per pair (`set_abort_channels` / the `ctrl` argument of
+`setup_mvzk`), the detecting party reports the reason to everyone and exits
+with code 1, the others print `peer j aborted: <reason>` and exit with code
+2, and `finalize` returns only once every party has finished, so the prover
+learns the verdict. Without control sockets a failed check still exits the
+detecting party, and its peers die on socket errors.
+
+Tests live in `test/mvzk/` and are (n+1)-party processes on localhost,
+started by the top-level `./run_mvzk <binary> <n+1> [args]` (party ids
+`0..n-1` are verifiers, `n` is the prover); ctest registers them as
+`mvzk_*`, including soundness tests with a cheating prover. Each pair of
+parties uses `max(2, threads)` data sockets plus one control socket, at
+`port + (lo*P + hi)*(num_io + 1) + i` (see `test/mvzk/test_mvzk.h`).
+The ring variant of the paper is not implemented.
+
 ## Benchmarks
 
 `-DEMP_ZK_BUILD_BENCHMARKS=ON` builds the throughput drivers under
@@ -121,6 +196,20 @@ and `setup_zk_arith(io, party, threads, expected_vole, vole_io, vole_threads)`.
 ./run ./build/bench/bench_bool_circuit_scalability  20 8   # log2(gates/100), threads
 ./run ./build/bench/bench_arith_circuit_scalability 24 8   # log2(multiplications), threads
 ```
+
+## References
+
+- **QuickSilver.** Kang Yang, Pratik Sarkar, Chenkai Weng, and Xiao Wang.
+  *QuickSilver: Efficient and Affordable Zero-Knowledge Proofs for Circuits
+  and Polynomials over Any Field.* ACM CCS 2021.
+  <https://eprint.iacr.org/2021/076>
+- **RAM-ZK.** Nicholas Franzese, Jonathan Katz, Steve Lu, Rafail Ostrovsky,
+  Xiao Wang, and Chenkai Weng. *Constant-Overhead Zero-Knowledge for RAM
+  Programs.* ACM CCS 2021. <https://eprint.iacr.org/2021/979>
+- **MVZK.** Daniel Escudero, Antigoni Polychroniadou, Yifan Song, and
+  Chenkai Weng. *Dishonest Majority Multi-Verifier Zero-Knowledge Proofs
+  for Any Constant Fraction of Corrupted Verifiers.* ACM CCS 2024.
+  <https://eprint.iacr.org/2024/997>
 
 ## [Questions]
 
