@@ -122,46 +122,9 @@ and `setup_zk_arith(io, party, threads, expected_vole, vole_io, vole_threads)`.
 ./run ./build/bench/bench_arith_circuit_scalability 24 8   # log2(multiplications), threads
 ```
 
-## Performance
+## [Questions]
 
-Measured on `main` at vole `4088a70`, both parties on one AWS EC2 instance
-(32 vCPU AMD EPYC 9R45, Ubuntu 24.04, GCC 13, `-march=native`), localhost,
-single socket per session, best of two or three runs. Bandwidth caps were
-applied with `tc tbf` on the loopback. "Threads" is the engine thread count
-with the producer pool set to the same value.
-
-#### Boolean circuits (105M gates), million gates per second
-
-|Threads|10 Mbps|50 Mbps|Localhost|
-|-------|-------|-------|---------|
-|1|8.2|39.7|42|
-|2|8.2|40.0|46|
-|4|8.2|40.2|61|
-|8|8.2|40.3|74|
-
-At 10 Mbps the proof is bandwidth-bound (about 1 bit per AND gate plus
-the COT corrections) and threads make no difference.
-
-#### Arithmetic circuits (16.8M multiplications), million multiplications per second
-
-|Threads|Localhost|
-|-------|---------|
-|1|9.7|
-|2|13.8|
-|4|17.9|
-|8|20.5|
-
-These include the one-time VOLE setup (0.2 to 0.5 s depending on threads);
-steady-state throughput is higher. Bandwidth-capped arithmetic numbers for
-this VOLE backend have not been re-measured yet.
-
-For reference, the v0.3.x line on two m5.2xlarge machines reached 8.6M
-Boolean gates and 7.8M multiplications per second single-threaded on
-localhost.
-
-## [Acknowledgement, Reference, and Questions](https://github.com/emp-toolkit/emp-readme/blob/main/README.md#citation)
-
-Please send email to Xiao Wang (wangxiao1254@gmail.com).
+Please send email to Chenkai Weng (chenkai.weng@asu.edu).
 
 ## License
 
