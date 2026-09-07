@@ -1,6 +1,7 @@
 #ifndef ZK_FP_EXECUTION_H__
 #define ZK_FP_EXECUTION_H__
 
+#include "emp-zk/vole_stream.h"   // must precede emp-ot (see there)
 #include "emp-ot/emp-ot.h"
 #include "emp-zk/emp-zk-arith/ostriple.h"
 #include "emp-zk/emp-zk-arith/edabit/edabits.h"

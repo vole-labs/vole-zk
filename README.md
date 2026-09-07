@@ -9,18 +9,20 @@
 > - **Existing projects pinned to a published release: stay on `v0.3.x`** —
 >   `python3 install.py --tool=v0.3.x --ot=v0.3.x --zk=v0.3.x`
 >   reproduces the prior emp-zk line. Bug fixes will be backported.
-> - **New projects, or willing to migrate: track `main`** — built against
->   the C++20 BooleanContext line of emp-tool / emp-ot v1.0.
->   `emp-zk-bool` is a native `BooleanContext` (`ZKBoolContext`) driven by an
->   explicit `ZKBoolSession` handle — no global backend; gadgets receive the
->   session and circuit values are `Bit_T<ZKBoolContext>` / `Int_T<…>`.
->   `emp-zk-arith` still keeps its own `ZKFpExec::zk_exec` singleton (staged).
->   `BaseCot` and `TwoKeyPRP` (which
->   moved out of emp-ot main) are vendored locally under
->   `emp-zk/emp-vole/`, and the `GaloisFieldPacking::base[]` array
->   that ram-zk indexes is provided by a small `ramzk_gf_base()`
->   helper. The full `emp-zk` umbrella (bool / arith / vole / ram /
->   floats / lowmc) builds and tests pass end-to-end.
+> - **New projects, or willing to migrate: track `main`** — the C++20
+>   BooleanContext line. `emp-zk-bool` is a native `BooleanContext`
+>   (`ZKBoolContext`) driven by an explicit `ZKBoolSession` handle — no global
+>   backend; gadgets receive the session and circuit values are
+>   `Bit_T<ZKBoolContext>` / `Int_T<…>`. `emp-zk-arith` still keeps its own
+>   `ZKFpExec::zk_exec` singleton (staged).
+>
+> The only dependency is [vole-labs/vole](https://github.com/vole-labs/vole),
+> vendored as the git submodule `thirdparty/vole`; it carries emp-tool and
+> emp-ot 1.0 as its own pinned submodules and both are built in-tree. vole
+> provides the F_p and GF(2^128) VOLEs (`RVole`, `F2kVole`, wrapped by
+> `emp-zk/vole_stream.h`); Boolean correlated OTs come from emp-ot's
+> `SilentFerret` out of the same tree. No emp-tool / emp-ot install step is
+> needed, and the `emp-ot` fork's `silent_svole.h` is no longer required.
 
 Protocols
 =====
@@ -29,27 +31,25 @@ The code in this repo implements a fast, scalable, communication-efficient zero-
 ## Requirements
 
 - CMake ≥ 3.21
-- A C++20 compiler
+- A C++20 compiler (GCC 11+ / Clang 14+)
 - OpenSSL (≥ 1.1)
-- emp-tool / emp-ot at the matching release line
+- a recursive submodule checkout (`thirdparty/vole` and, inside it,
+  emp-tool / emp-ot 1.0)
 
 ## Build and install
 
 ```bash
+git clone --recursive https://github.com/vole-labs/vole-zk.git
+# or, in an existing checkout:  git submodule update --init --recursive
 cmake -B build -DCMAKE_BUILD_TYPE=Release
 cmake --build build -j
 sudo cmake --install build      # respects CMAKE_INSTALL_PREFIX
 ```
 
-If emp-tool / emp-ot are in sibling source trees rather than installed,
-point CMake at their build directories:
-
-```bash
-cmake -B build -DCMAKE_BUILD_TYPE=Release \
-    -Demp-tool_DIR=/path/to/emp-tool/build \
-    -Demp-ot_DIR=/path/to/emp-ot/build
-cmake --build build -j
-```
+The install step ships emp-zk together with the emp-tool / emp-ot targets and
+the vole headers it was built against, so `find_package(emp-zk)` stays
+self-contained. Pass `-DEMP_TOOL_NATIVE_ARCH=OFF` for a binary that is not
+tuned to the build host.
 
 ## Consuming from another CMake project
 

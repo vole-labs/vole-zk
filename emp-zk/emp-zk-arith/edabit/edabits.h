@@ -4,6 +4,7 @@
 #include <algorithm>
 #include <bitset>
 
+#include "emp-zk/vole_stream.h"   // must precede emp-ot (see there)
 #include "emp-ot/emp-ot.h"
 #include "emp-tool/emp-tool.h"
 #include "emp-zk/emp-zk-arith/edabit/doub_auth_helper.h"
@@ -29,7 +30,7 @@ public:
   __uint128_t delta_fp;
   std::vector<__uint128_t> arith_candidate;
 
-  FpVOLE<AuthValueFp> *cot_fp = nullptr;
+  FpOSTriple *ostriple = nullptr;
 
   DoubAuthHelper *auth_helper = nullptr;
 
@@ -46,22 +47,24 @@ public:
   ZKInt int_boo_pr, int_boo_zero, int_boo_pr_plus_two;
   ZKBoolSession &zk;   // bool session: runtime input + the bool engine
 
-  EdaBits(ZKBoolSession &zk, BoolIO *io, FpVOLE<AuthValueFp> *cot_fp) : zk(zk) {
+  EdaBits(ZKBoolSession &zk, BoolIO *io, FpOSTriple *ostriple) : zk(zk) {
     this->party = zk.party();
     this->io = io;
-    this->cot_fp = cot_fp;
+    this->ostriple = ostriple;
     if (party == BOB) {
-      this->delta_fp = cot_fp->delta();
+      this->delta_fp = ostriple->delta;
     }
 
-    this->np_sz = cot_fp->chunk_aligned_buf_sz();
+    // F_p shares are drawn through the engine's VOLE stream in fixed refills
+    // (must exceed one batch `ell`).
+    this->np_sz = 1u << 22;
     this->np_pt = 0;
     this->np_rg = 0;
     this->edabit_offset = 0;
     this->rand_pt = 0;
     this->edabit_num = 0;
-    arith_candidate.resize(cot_fp->chunk_aligned_buf_sz());
-    cot_fp->next_n((AuthValueFp *)arith_candidate.data(), cot_fp->chunk_aligned_buf_sz());
+    arith_candidate.resize(np_sz);
+    ostriple->draw_vole((AuthValueFp *)arith_candidate.data(), np_sz);
 
     this->ell = B * N + C; // batch size
     this->ell_faulty = ell - N;
@@ -93,7 +96,7 @@ public:
     // auto start = clock_start();
     //  If the buffer is used up, refill the Fp shares
     if (np_pt + ell > np_sz) {
-      cot_fp->next_n((AuthValueFp *)arith_candidate.data(), cot_fp->chunk_aligned_buf_sz());
+      ostriple->draw_vole((AuthValueFp *)arith_candidate.data(), np_sz);
       np_pt = 0;
     }
     np_rg = np_pt + ell;

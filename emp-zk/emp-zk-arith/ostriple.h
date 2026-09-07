@@ -1,6 +1,7 @@
 #ifndef FP_OS_TRIPLE_H__
 #define FP_OS_TRIPLE_H__
 
+#include "emp-zk/vole_stream.h"   // must precede emp-ot (see there)
 #include "emp-ot/emp-ot.h"
 #include "emp-zk/emp-zk-arith/correlation_pipe.h"
 #include "emp-zk/emp-zk-arith/triple_auth.h"
@@ -60,11 +61,9 @@ public:
 
   BoolIO *io;
   PRG prg;
-  // Stored as the Svole<AuthValueFp> base pointer (= FpVOLE<AuthValueFp>*) but
-  // constructed as a SilentFpVOLE so begin()/next()/end() dispatch virtually to
-  // the threaded silent path. Borrowers (EdaBits / FpPolyProof) take the same
-  // base pointer, so the swap is transparent to them.
-  FpVOLE<AuthValueFp> *vole = nullptr;
+  // F_p VOLE from vole-labs/vole (RVole<FP61, FP61x2> behind FpVoleStream).
+  // Borrowers (EdaBits / FpPolyProof) draw through draw_vole(), never here.
+  FpVoleStream *vole = nullptr;
   FpAuthHelper *auth_helper = nullptr;
 
   static constexpr int64_t kFeedParMin = ((int64_t)1 << 20) - 1;  // thread feed() at >= 1M elements
@@ -75,7 +74,7 @@ public:
   int64_t CHECK_SZ = 8 * 1024 * 1024;
 
   // ---- Background sVOLE (opt-in; enabled when a second socket is provided) --
-  // In background mode the SilentFpVOLE runs on its OWN socket (bg_io_) on a
+  // In background mode the F_p VOLE runs on its OWN socket (bg_io_) on a
   // dedicated producer thread, streaming correlations into a CorrelationPipe;
   // this engine consumes them via draw_vole() on the main socket. The sVOLE's
   // round-trips (corrections + rollovers + malicious check) overlap this
@@ -107,8 +106,7 @@ public:
     if (bg_) {
       draw_vole_(buf, n);                       // from the background pipe
     } else {
-      auto *sv = static_cast<SilentFpVOLE<AuthValueFp> *>(vole);
-      sv->next_chunks_parallel(buf, n / sv->chunk_size(), vole_threads_);
+      vole->next_n(buf, n);   // vole's own pool (vole_threads_) runs the expansion
     }
     if (prof_fills_done_++ == 0) prof_fill_setup_us += time_from(_t);
     else                         prof_fill_online_us += time_from(_t);
@@ -233,11 +231,11 @@ public:
     bg_io_ = vole_io;
 
     if (party == BOB) delta_gen();
-    // The sVOLE lives on socket A (bg_io_) in background mode, else on `io`.
-    vole = new SilentFpVOLE<AuthValueFp>(3 - party, bg_ ? bg_io_ : io,
-                                         /*malicious=*/true, tuning::ferret_b13,
-                                         this->vole_threads_);
-    if (party == BOB) vole->set_delta((uint64_t)delta);
+    // The VOLE lives on socket A (bg_io_) in background mode, else on `io`.
+    // vole_threads_ sizes vole's MPFSS / LPN pool (one sibling socket per
+    // extra worker, see VoleChannels).
+    vole = new FpVoleStream(party, bg_ ? bg_io_ : io, this->vole_threads_,
+                            party == BOB ? (uint64_t)delta : 0);
 
     andgate_out_buffer.resize(CHECK_SZ);
     andgate_left_buffer.resize(CHECK_SZ);
@@ -249,7 +247,7 @@ public:
       // thread never touches them. `expected_vole` is not needed (ignored).
       //
       // ROUND-SIZED DOUBLE BUFFER (deadlock-free). Each pipe slot holds exactly
-      // one sVOLE round (cots_per_round), and there are two of them: the producer
+      // one vole extension round (round_size), and there are two of them: the producer
       // fills one (a cross-party round-trip on socket A) while the consumer drains
       // the other. Because the consumer always has a FULL round buffered locally,
       // it keeps driving the MAIN socket (sending lam / corrections) throughout a
@@ -259,38 +257,27 @@ public:
       // the "one party's full local buffer stalls the peer's peer-synchronous
       // generation" deadlock. The cross-party round generation itself bounds the
       // drift to <= 2 rounds, exactly the double buffer's capacity.
-      auto *sv = static_cast<SilentFpVOLE<AuthValueFp> *>(vole);
-      bg_batch_ = sv->cots_per_round();   // one full round per buffer
+      bg_batch_ = vole->round_size();     // one full round per buffer
       // BG_SLOTS (default 4): sVOLE-side banked rounds. 2 slots = only ~1 FINISHED round
       // banked (the other is mid-production), so a >15M refill (LogUp 16.8M chunks) waits
       // on the in-flight round. 4 = one draining + one filling + TWO fully banked (~31M),
       // so any single refill is served from finished buffers. +249 MB per extra slot.
       const int bg_slots = getenv("BG_SLOTS") ? atoi(getenv("BG_SLOTS")) : 4;
       pipe_ = std::make_unique<CorrelationPipe<AuthValueFp>>(bg_slots, bg_batch_);
-      const int64_t bg_chunks = bg_batch_ / sv->chunk_size();
-      producer_ = std::thread([this, bg_chunks] {
-        auto *s = static_cast<SilentFpVOLE<AuthValueFp> *>(vole);
-        s->begin(s->cots_per_round());     // prepay round 0 (wire-free first fill)
+      producer_ = std::thread([this] {
+        // Each fill is one vole extension round (a cross-party exchange on
+        // socket A, expanded across vole_threads_ workers); the consumer
+        // drains finished rounds from the pipe on the main socket.
         for (int i; (i = pipe_->acquire_free()) >= 0;) {
-          // Fill one round with the THREADED produce (vole_threads_ workers) so
-          // vole_threads actually parallelizes the bulk cGGM+LPN produce, not
-          // just the rollover prepare. The cross-party rollover still happens on
-          // the producer thread inside ensure_tree_available_ (socket A); the
-          // parallel produce_range is wire-free.
-          s->next_chunks_parallel(pipe_->slot[i].data(), bg_chunks, vole_threads_);
+          vole->next_n(pipe_->slot[i].data(), bg_batch_);
           pipe_->publish();
         }
-        s->end();                          // local (checks already done at begin)
       });
-    } else {
-      // Default single-socket path. PREPAY the whole proof's VOLE when its size
-      // is known (expected_vole) so the threaded produce runs wire-free (else 1
-      // round is prepaid and producing past it triggers live rollovers).
-      if (expected_vole > 0)
-        static_cast<SilentFpVOLE<AuthValueFp> *>(vole)->begin(expected_vole);
-      else
-        vole->begin();
     }
+    // Single-socket path: vole extends a round whenever its buffer runs out;
+    // there is no whole-proof prepay, so `expected_vole` is accepted for API
+    // compatibility and otherwise unused.
+    (void)expected_vole;
 
     __uint128_t tmp;
     draw_vole_((AuthValueFp *)&tmp, 1);
@@ -315,8 +302,6 @@ public:
       if (cur_slot_ >= 0) { pipe_->release(); cur_slot_ = -1; }
       pipe_->finish();
       if (producer_.joinable()) producer_.join();
-    } else {
-      vole->end();      // close the persistent sVOLE session
     }
     delete vole;
     delete pool_;

@@ -1,0 +1,3 @@
+[submodule "thirdparty/vole"]
+	path = thirdparty/vole
+	url = https://github.com/vole-labs/vole.git

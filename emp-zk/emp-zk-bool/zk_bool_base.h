@@ -25,6 +25,7 @@
 // method carries runtime party dispatch (`if (party == ALICE) … else …`).
 
 #include <emp-tool/emp-tool.h>
+#include "emp-zk/vole_stream.h"   // F2kVoleStream; must precede emp-ot
 #include "emp-ot/emp-ot.h"
 
 #include "emp-zk/emp-zk-bool/zk_wire.h"
@@ -83,7 +84,7 @@ public:
   // variant lives in ZKPermProof, its sole caller. Conversion from bits
   // is a local Σ·Xⁱ map (same Δ), so only multiplication is interactive.
   bool f2k_ready = false;
-  F2kVOLE<AuthValueF2k> *f2k_vole = nullptr;
+  F2kVoleStream *f2k_vole = nullptr;
   int64_t f2k_buffer_sz = 0;
   int64_t f2k_authval_cnt = 0, f2k_check_cnt = 0;
   std::vector<AuthValueF2k> f2k_auth_buffer;       // pre-drawn VOLE values
@@ -484,15 +485,14 @@ public:
   // own inner Ferret keeps its wire bytes separate from the bit Ferret.
   void f2k_init() {
     if (f2k_ready) return;
-    // SilentF2kVOLE is-a F2kVOLE (Svole base); cot_threads_ sizes its
-    // begin-time expansion pool (it is a correlation producer, so it shares
-    // the Ferret's budget, not the engine pool's). run()/set_delta dispatch
-    // virtually through the base pointer, so the swap is transparent to the
-    // rest of the f2k machinery.
-    f2k_vole = new SilentF2kVOLE<AuthValueF2k>(party, io, /*malicious=*/true,
-                                               tuning::ferret_b10, cot_threads_);
-    if (party == BOB) f2k_vole->set_delta(ferret->Delta);
-    f2k_buffer_sz = f2k_vole->chunk_aligned_buf_sz();
+    // GF(2^128) VOLE from vole-labs/vole, keyed with this engine's Delta on
+    // the verifier. cot_threads_ sizes vole's expansion pool (a correlation
+    // producer, so it shares the Ferret's budget, not the engine pool's).
+    f2k_vole = new F2kVoleStream(party, io, cot_threads_,
+                                 party == BOB ? ferret->Delta : zero_block);
+    // Refill granularity of the f2k buffers (vole serves any length); the
+    // batch check fires once per buffer, as before.
+    f2k_buffer_sz = 1 << 20;
     f2k_auth_buffer.resize(f2k_buffer_sz);
     f2k_left_val.resize(f2k_buffer_sz);
     f2k_left_mac.resize(f2k_buffer_sz);

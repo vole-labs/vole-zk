@@ -15,7 +15,7 @@ namespace emp {
 using namespace std;
 
 // Arithmetic-only setup (no bool<->arith conversion). `threads` sizes the
-// FpOSTriple AND-triple-check pool and the inner SilentFpVOLE expansion pool
+// FpOSTriple AND-triple-check pool and vole's inner F_p VOLE expansion pool
 // (1 = single-threaded, wire-equivalent to the prior FpVOLE path).
 // `vole_io` (optional): a second socket enabling the background sVOLE path (the
 // sVOLE runs on it in a producer thread; the engine consumes via a pipe). The
@@ -51,10 +51,10 @@ inline void setup_zk_arith(BoolIO *io, int party, ZKBoolSession &bool_sess,
   setup_zk_arith(io, party, threads);
   if (party == ALICE) {
     EdaBits::conv = new EdaBits(
-        bool_sess, io, ((ZKFpExecPrv *)(ZKFpExec::zk_exec))->ostriple->vole);
+        bool_sess, io, ((ZKFpExecPrv *)(ZKFpExec::zk_exec))->ostriple);
   } else {
     EdaBits::conv = new EdaBits(
-        bool_sess, io, ((ZKFpExecVer *)(ZKFpExec::zk_exec))->ostriple->vole);
+        bool_sess, io, ((ZKFpExecVer *)(ZKFpExec::zk_exec))->ostriple);
     EdaBits::conv->install_boolean(bool_sess.engine().delta);
   }
 }

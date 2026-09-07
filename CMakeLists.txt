@@ -24,13 +24,38 @@ option(EMP_ZK_BUILD_BENCHMARKS "Build emp-zk benchmarks (build-only, not ctest)"
 option(EMP_ZK_INSTALL     "Generate install / export rules" ${PROJECT_IS_TOP_LEVEL})
 
 # ---------------------------------------------------------------------
-# Dependencies
+# Dependencies: vole-labs/vole only.
+#
+# thirdparty/vole (git submodule, checked out recursively) is header-only and
+# carries emp-tool / emp-ot 1.0 as its own pinned submodules. Both are built
+# here in-tree from those pins, so nothing has to be installed beforehand:
+#   git submodule update --init --recursive
+#   cmake -B build && cmake --build build -j
+# The F_p / GF(2^128) VOLEs come from vole (emp-zk/vole_stream.h); Boolean
+# COTs come from emp-ot's SilentFerret out of the same tree.
 # ---------------------------------------------------------------------
-# Local-dev tip: point at sibling build trees with
-#   -Demp-tool_DIR=/path/to/emp-tool/build
-#   -Demp-ot_DIR=/path/to/emp-ot/build
-# emp-ot's package config already pulls in emp-tool::emp-tool transitively.
-find_package(emp-ot 1.0 REQUIRED)
+set(VOLE_DIR     ${CMAKE_CURRENT_SOURCE_DIR}/thirdparty/vole)
+set(EMP_TOOL_DIR ${VOLE_DIR}/thirdparty/emp-tool)
+set(EMP_OT_DIR   ${VOLE_DIR}/thirdparty/emp-ot)
+if(NOT EXISTS ${VOLE_DIR}/vole/vole_f2k.h OR
+   NOT EXISTS ${EMP_TOOL_DIR}/CMakeLists.txt OR
+   NOT EXISTS ${EMP_OT_DIR}/CMakeLists.txt)
+    message(FATAL_ERROR
+        "thirdparty/vole (or its emp-tool / emp-ot submodules) is missing. Run:\n"
+        "  git submodule update --init --recursive")
+endif()
+set(EMP_TOOL_BUILD_TESTS      OFF CACHE BOOL "" FORCE)
+set(EMP_TOOL_BUILD_BENCHMARKS OFF CACHE BOOL "" FORCE)
+set(EMP_OT_BUILD_TESTS        OFF CACHE BOOL "" FORCE)
+# Their install / export rules ride along with ours so an installed emp-zk
+# stays self-contained (find_dependency(emp-ot) in emp-zk-config resolves).
+set(EMP_TOOL_INSTALL ${EMP_ZK_INSTALL} CACHE BOOL "" FORCE)
+set(EMP_OT_INSTALL   ${EMP_ZK_INSTALL} CACHE BOOL "" FORCE)
+add_subdirectory(${EMP_TOOL_DIR} ${CMAKE_BINARY_DIR}/emp-tool)
+# emp-ot's CMakeLists calls find_package(emp-tool 1.0 REQUIRED); vole ships a
+# shim config that just confirms the in-tree target.
+set(emp-tool_DIR ${VOLE_DIR}/cmake/emp-tool-shim CACHE PATH "" FORCE)
+add_subdirectory(${EMP_OT_DIR} ${CMAKE_BINARY_DIR}/emp-ot)
 
 # ---------------------------------------------------------------------
 # Library target
@@ -46,6 +71,7 @@ target_compile_features(emp-zk PUBLIC cxx_std_20)
 
 target_include_directories(emp-zk PUBLIC
     $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}>
+    $<BUILD_INTERFACE:${VOLE_DIR}>
     $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>)
 
 target_link_libraries(emp-zk PUBLIC emp-ot::emp-ot)
@@ -62,6 +88,11 @@ if(EMP_ZK_INSTALL)
         RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
 
     install(DIRECTORY emp-zk
+        DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}
+        FILES_MATCHING
+            PATTERN "*.h")
+    # vole's headers, as included by emp-zk/vole_stream.h ("vole/...").
+    install(DIRECTORY ${VOLE_DIR}/vole
         DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}
         FILES_MATCHING
             PATTERN "*.h")
