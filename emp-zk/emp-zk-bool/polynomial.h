@@ -1,7 +1,7 @@
 #ifndef POLY_H__
 #define POLY_H__
 
-#include "emp-zk/vole_stream.h"   // must precede emp-ot (see there)
+#include "emp-zk/vole_stream.h"
 #include "emp-ot/emp-ot.h"
 #include "emp-tool/emp-tool.h"
 #include <functional>

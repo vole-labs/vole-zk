@@ -13,14 +13,6 @@
 // every vole object is constructed with `3 - party`. The verifier's outputs
 // are keys, stored in the .mac lane with .val = 0, matching what the engines
 // already assume for their AuthValue-shaped keys.
-// Include order matters: vole's field headers define a global mul64 and
-// emp-ot 1.0's svole/fp_utility.h defines emp::mul64 with the same signature.
-// vole's code sees both through `using namespace emp`, so it must be parsed
-// BEFORE emp-ot's svole headers. Every emp-zk header that includes emp-ot
-// includes this file first; the guard below catches any other order.
-#ifdef EMP_OT_SVOLE_FP_UTILITY_H__
-#error "include an emp-zk header (or emp-zk/vole_stream.h) before emp-ot/emp-ot.h"
-#endif
 #include <emp-tool/emp-tool.h>
 #include "vole/vole_f2k.h"
 #include "emp-ot/emp-ot.h"

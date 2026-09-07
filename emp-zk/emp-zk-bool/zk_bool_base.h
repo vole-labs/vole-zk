@@ -25,7 +25,7 @@
 // method carries runtime party dispatch (`if (party == ALICE) … else …`).
 
 #include <emp-tool/emp-tool.h>
-#include "emp-zk/vole_stream.h"   // F2kVoleStream; must precede emp-ot
+#include "emp-zk/vole_stream.h"   // F2kVoleStream
 #include "emp-ot/emp-ot.h"
 
 #include "emp-zk/emp-zk-bool/zk_wire.h"

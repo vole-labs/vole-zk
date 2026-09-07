@@ -4,7 +4,7 @@
 #include <algorithm>
 #include <bitset>
 
-#include "emp-zk/vole_stream.h"   // must precede emp-ot (see there)
+#include "emp-zk/vole_stream.h"
 #include "emp-ot/emp-ot.h"
 #include "emp-tool/emp-tool.h"
 #include "emp-zk/emp-zk-arith/edabit/doub_auth_helper.h"
