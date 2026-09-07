@@ -115,7 +115,7 @@ and `setup_zk_arith(io, party, threads, expected_vole, vole_io, vole_threads)`.
 ## Multi-verifier ZK (`emp-zk/mvzk`)
 
 `emp-zk/mvzk` implements the multi-verifier zero-knowledge protocol of
-[Escudero, Polychroniadou, Song, Weng](https://eprint.iacr.org/2022/1750)
+[Escudero, Polychroniadou, Song, Weng](https://eprint.iacr.org/2024/997)
 (one prover, `n` verifiers, up to `t = n - k` of them corrupt) over
 F_p with p = 2^59 - 2^28 + 1, on top of vole's n-party VOLEs (primal-LPN
 by default, committed dual-LPN as an alternative):
@@ -196,6 +196,20 @@ The ring variant of the paper is not implemented.
 ./run ./build/bench/bench_bool_circuit_scalability  20 8   # log2(gates/100), threads
 ./run ./build/bench/bench_arith_circuit_scalability 24 8   # log2(multiplications), threads
 ```
+
+## References
+
+- **QuickSilver.** Kang Yang, Pratik Sarkar, Chenkai Weng, and Xiao Wang.
+  *QuickSilver: Efficient and Affordable Zero-Knowledge Proofs for Circuits
+  and Polynomials over Any Field.* ACM CCS 2021.
+  <https://eprint.iacr.org/2021/076>
+- **RAM-ZK.** Nicholas Franzese, Jonathan Katz, Steve Lu, Rafail Ostrovsky,
+  Xiao Wang, and Chenkai Weng. *Constant-Overhead Zero-Knowledge for RAM
+  Programs.* ACM CCS 2021. <https://eprint.iacr.org/2021/979>
+- **MVZK.** Daniel Escudero, Antigoni Polychroniadou, Yifan Song, and
+  Chenkai Weng. *Dishonest Majority Multi-Verifier Zero-Knowledge Proofs
+  for Any Constant Fraction of Corrupted Verifiers.* ACM CCS 2024.
+  <https://eprint.iacr.org/2024/997>
 
 ## [Questions]
 
