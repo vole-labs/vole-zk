@@ -1,0 +1,16 @@
+#!/bin/bash
+# Launch an (n+1)-party mvzk test on localhost: run_mvzk <binary> <n_parties> [args...]
+# Party ids 0..n_parties-1 (the last one is the prover); a random port base is
+# passed positionally after the party id. Exit status is the OR of all parties.
+bin=$1; P=$2; shift 2
+port=$(( (RANDOM % 20000) + 20000 ))
+pids=()
+for ((p = 0; p < P - 1; p++)); do
+  "$bin" $p $port "$@" > /tmp/mvzk_party_$p.log 2>&1 &
+  pids+=($!)
+done
+"$bin" $((P - 1)) $port "$@"
+rc=$?
+for pid in "${pids[@]}"; do wait $pid || rc=1; done
+[ $rc -ne 0 ] && for ((p = 0; p < P - 1; p++)); do echo "--- party $p log"; tail -5 /tmp/mvzk_party_$p.log; done
+exit $rc

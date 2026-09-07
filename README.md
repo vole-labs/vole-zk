@@ -112,6 +112,52 @@ and `setup_zk_arith(io, party, threads, expected_vole, vole_io, vole_threads)`.
   `expected_vole` is accepted for API compatibility but vole has no
   prepay, so it has no effect.
 
+## Multi-verifier ZK (`emp-zk/mvzk`)
+
+`emp-zk/mvzk` implements the multi-verifier zero-knowledge protocol of
+[Escudero, Polychroniadou, Song, Weng](https://eprint.iacr.org/2022/1750)
+(one prover, `n` verifiers, up to `t = n - k` of them corrupt) over
+F_p with p = 2^59 - 2^28 + 1, on top of vole's committed VOLE:
+
+- `nvole.h` — programmable n-party VOLE (paper protocol Π_nVOLE) built
+  from vole's `CVoleFp`: the prover seeds every verifier's VOLE input and
+  reproduces it locally, every ordered pair of verifiers runs a committed
+  VOLE, and the prover's published commitments bind each verifier to a
+  single input across all its instances (the consistency check the
+  original implementation left incomplete).
+- `zk/auth.h` — packed-Shamir reinterpretation of the VOLE outputs into
+  authenticated additive sharings of `k` values at a time (Π_Prep);
+  fresh Fiat-Shamir nonces after every VOLE extension.
+- `zk/prover.h`, `zk/verifier.h`, `zk/compress.h` — wire sharing, the
+  batched multiplication check (inner-product reduction, 16-way
+  polynomial compression, Fiat-Shamir over all prover messages), a
+  broadcast-consistency echo among the verifiers, and the final opening
+  of the compressed triple with a zero-share-masked, commit-then-open MAC
+  check (Π_Online).
+- `zk/backend.h` — the circuit API `MvzkBackend<IO, FP59, FP59x2>`:
+  `param(log_n, log_k)`, `auth_val_input`, `compute_add`,
+  `compute_mult`, `flush_wires`, `finalize`. Verifier-side outputs are
+  filled when their packed sharing arrives (every `k`-th wire or at a
+  flush); do not read them before that.
+
+Tests live in `test/mvzk/` and are (n+1)-party processes on localhost,
+started by the top-level `./run_mvzk <binary> <n+1> [args]` (party ids
+`0..n-1` are verifiers, `n` is the prover); ctest registers them as
+`mvzk_*`, including a soundness test with a cheating prover. Each pair of
+parties needs `max(2, threads)` sockets, `port + (lo*P + hi)*num_io + i`.
+Measured on a 32-vCPU EPYC box, all parties on one host:
+
+| verifiers `n` | `k` | circuit | per mult gate |
+|---|---|---|---|
+| 4 | 2 | 2^12 mults, 2^14 VOLE rounds | 118 µs (VOLE-bound) |
+| 8 | 4 | 2^19.6 mults, 2^20 VOLE rounds | 28 µs |
+| 16 | 4 | 64³ matmul (2^18 mults), 2^20 VOLE rounds | 209 µs (one 2^20 extension, mostly unused) |
+
+The cost is dominated by the committed VOLE (about 100x a plain VOLE
+correlation), which every ordered pair of verifiers runs: the fixed cost
+of one extension at `n = 16` is ~55 s on one host and amortises over
+`k · 2^20` wires. The ring variant of the paper is not implemented.
+
 ## Benchmarks
 
 `-DEMP_ZK_BUILD_BENCHMARKS=ON` builds the throughput drivers under
