@@ -1,6 +1,6 @@
 // (n+1)-party end-to-end test of the MVZK backend: inputs, additions,
 // multiplications (including a partial last batch), then the final check.
-// usage: test_mvzk_backend <party> <port> [log_k=1] [log_n=2] [log_mults=12] [vole_per_round=16384] [threads=1] [cheat=0]
+// usage: test_mvzk_backend <party> <port> [log_k=1] [log_n=2] [log_mults=12] [vole_per_round=16384] [threads=1] [cheat=0] [peer_par=0]
 // cheat=1 makes the prover claim one wrong product; the verifiers must abort.
 #include "test_mvzk.h"
 #include "emp-zk/mvzk/mvzk.h"
@@ -21,13 +21,14 @@ int main(int argc, char **argv) {
   std::size_t per_round = (argc > 6) ? (std::size_t)atoll(argv[6]) : (1u << 14);
   std::size_t threads = (argc > 7) ? (std::size_t)atoi(argv[7]) : 1;
   bool cheat = (argc > 8) && atoi(argv[8]) != 0;
+  std::size_t peer_par = (argc > 9) ? (std::size_t)atoi(argv[9]) : 0;
   int n = 1 << log_n;
   std::size_t num = ((std::size_t)1 << log_mults) + 3;   // not a multiple of k: exercises partial batches
   MeshIO mesh(party, n + 1, port, std::max<std::size_t>(2, threads));
 
   MvzkBackend<NetIO, T, S> backend(party, threads, mesh.ios);
   auto t0 = clock_start();
-  backend.param(log_n, log_k, per_round);
+  backend.param(log_n, log_k, per_round, peer_par);
   double t_setup = time_from(t0);
   t0 = clock_start();
   if (party == n) {

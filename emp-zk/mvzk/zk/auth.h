@@ -34,9 +34,9 @@ public:
   double timeVOLE = 0.0, timeConversion = 0.0;
 
   Auth(std::size_t id_party_, std::size_t k_, std::size_t n_, std::size_t threads_,
-       std::vector<IO **> ios_, std::size_t vole_per_round)
+       std::vector<IO **> ios_, std::size_t vole_per_round, std::size_t peer_par = 0)
       : id_party(id_party_), k(k_), n(n_), threads(threads_), ios(ios_) {
-    nvole = new MvzkNVole<IO, T, S>((int)id_party_, (int)n_, threads_, ios, vole_per_round);
+    nvole = new MvzkNVole<IO, T, S>((int)id_party_, (int)n_, threads_, ios, vole_per_round, 1, peer_par);
     nvole->setup();
     usable = nvole->usable();
     ptr = usable;

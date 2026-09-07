@@ -19,8 +19,10 @@
 //
 // Each extend() yields `usable()` correlations per party, in rounds of
 // param.n outputs of which ot_limit are usable (CVoleFp self-seeds from the
-// tail). The scheduling of the pairwise mesh is vole's antipode ring
-// (deadlock-free with the two-thread split).
+// tail). Every pair (i, j) is independent: its two VOLE directions run back to
+// back on one thread of each party (the lower id verifies first), and a
+// verifier runs up to `peer_par` peers concurrently (default: all n-1). The
+// prover expands its n local copies concurrently as well.
 #include <emp-tool/emp-tool.h>
 #include "vole/cvole.h"
 #include <future>
@@ -40,7 +42,8 @@ public:
   FP delta;                  // verifier: its key share Delta_i
   PRG prg;
   std::vector<IO **> ios;
-  ThreadPool *pool = nullptr;
+  ThreadPool *pool = nullptr;      // peer-level parallelism (verifier) / local expansions (prover)
+  std::size_t peer_par = 0;
 
   // verifier state
   block prog_seed;
@@ -55,23 +58,29 @@ public:
   struct Stats {
     double prover_local = 0, prover_publish = 0;          // prover
     double wait_coms = 0, mesh_wall = 0;                  // verifier
-    double arc_main = 0, arc_pool = 0;                    // busy time of the two mesh threads
-    double commit_extend = 0, commit_hash = 0;            // summed over peers (both threads)
+    double peer_max = 0, peer_sum = 0;                    // per-peer wall time (max / sum over peers)
+    double commit_extend = 0, commit_hash = 0;            // summed over peers
     double verify_extend = 0, verify_check = 0;
-    std::size_t peers_main = 0, peers_pool = 0;
+    std::size_t workers = 0;
   } stats;
 
   // `per_round` selects vole's LPN scale (outputs per round); extends deliver
   // `rounds_per_extend` rounds at a time.
+  // peer_par_: concurrent peers per verifier / concurrent local expansions on
+  // the prover; 0 = all (n-1 resp. n).
   MvzkNVole(int id_, int n_, std::size_t threads_, std::vector<IO **> &ios_,
-            std::size_t per_round = (1ull << 20), std::size_t rounds_per_extend = 1)
+            std::size_t per_round = (1ull << 20), std::size_t rounds_per_extend = 1,
+            std::size_t peer_par_ = 0)
       : id(id_), n(n_), threads(threads_), rounds(rounds_per_extend) {
     param = cvole_resolve_param<FP>(cvole_fp_param_for(per_round));
     M = (param.t + 1) + (param.t_com + 1);
     ot_limit = param.n - M;
     cn = rounds * param.n_com;
     ios.assign(ios_.begin(), ios_.end());
-    pool = new ThreadPool(1);
+    std::size_t all = is_prover() ? (std::size_t)n : (std::size_t)(n - 1);
+    peer_par = (peer_par_ == 0 || peer_par_ > all) ? all : peer_par_;
+    if (peer_par == 0) peer_par = 1;
+    pool = new ThreadPool((int)peer_par);
     if (!is_prover()) delta.rand(prg);
   }
   ~MvzkNVole() {
@@ -95,18 +104,18 @@ public:
         ios[i][0]->flush();
       }
       local.resize(n, nullptr);
-      for (int i = 0; i < n; ++i) {
+      for_each_index(n, [this](int i) {
         local[i] = new CVoleFp<IO, FP, FPS>(threads, param);
         local[i]->setup_prog(prog_seeds[i]);
         local[i]->setup_local();
-      }
+      });
       return;
     }
     ios[n][0]->recv_data(&prog_seed, sizeof(block));
     fwd.resize(n, nullptr);
     inv.resize(n, nullptr);
     com_pub.assign(n, std::vector<FP>());
-    mesh_run(/*is_setup=*/true, nullptr, nullptr, nullptr);
+    for_each_peer([this](int j) { setup_with(j); });
   }
 
   // ---------------- one extend ----------------
@@ -114,13 +123,14 @@ public:
   void extend_prover(std::vector<FP *> &secrets_all) {
     stats = Stats();
     auto t0 = clock_start();
-    std::vector<FP> x(x_buf());
     std::vector<std::vector<FP>> com(n, std::vector<FP>(cn));
-    for (int i = 0; i < n; ++i) {
+    for_each_index(n, [this, &com, &secrets_all](int i) {
+      std::vector<FP> x(x_buf());
       local[i]->extend_inplace_local(x.data(), com[i].data(), rounds);
       std::copy(x.begin(), x.begin() + usable(), secrets_all[i]);
-    }
+    });
     stats.prover_local = time_from(t0);
+    stats.workers = peer_par;
     t0 = clock_start();
     // publish every verifier's commitment to every verifier
     for (int j = 0; j < n; ++j) {
@@ -143,11 +153,21 @@ public:
     stats.wait_coms = time_from(t0);
     value_digest_.assign(n, std::vector<block>(2, zero_block));
     t0 = clock_start();
-    for (int q = 0; q < 4; ++q) tm_main_[q] = tm_pool_[q] = 0;
-    mesh_run(/*is_setup=*/false, secrets, &macs, &keys);
+    tm_.assign(n, std::vector<double>(5, 0.0));
+    secrets_writer_ = (id == 0) ? 1 : 0;   // one designated peer fills `secrets`
+    for_each_peer([this, secrets, &macs, &keys](int j) {
+      auto tp = clock_start();
+      extend_with(j, secrets, macs, keys);
+      tm_[j][4] = time_from(tp);
+    });
     stats.mesh_wall = time_from(t0);
-    stats.commit_extend = tm_main_[0] + tm_pool_[0]; stats.commit_hash = tm_main_[1] + tm_pool_[1];
-    stats.verify_extend = tm_main_[2] + tm_pool_[2]; stats.verify_check = tm_main_[3] + tm_pool_[3];
+    stats.workers = peer_par;
+    for (int j = 0; j < n; ++j) {
+      if (j == id) continue;
+      stats.commit_extend += tm_[j][0]; stats.commit_hash += tm_[j][1];
+      stats.verify_extend += tm_[j][2]; stats.verify_check += tm_[j][3];
+      stats.peer_sum += tm_[j][4]; stats.peer_max = std::max(stats.peer_max, tm_[j][4]);
+    }
     // Every committer instance of this party reproduces the same u^id; check the
     // per-peer digests agree (they were written on two threads, see commit_round).
     int ref = -1;
@@ -163,37 +183,20 @@ private:
   std::vector<std::vector<block>> value_digest_;
   int secrets_writer_ = -1;   // the peer whose commit_round fills `secrets`
 
-  // antipode-ring schedule (vole/mcvole.h): forward arc on the main thread,
-  // backward arc on the pool thread; each pair runs on exactly one thread per party.
-  void mesh_run(bool is_setup, FP *secrets, std::vector<FP *> *macs, std::vector<FP *> *keys) {
-    int half = n / 2;
-    int dest_back = (id >= half) ? (id - half) : (id + half);
-    int dest_frnt = (dest_back == 0) ? (n - 1) : (dest_back - 1);
-    // the first peer of the forward arc writes `secrets`
-    secrets_writer_ = (id == n - 1) ? 0 : (id + 1);
-    if (n == 1) secrets_writer_ = -1;
-
-    auto fut = pool->enqueue([this, dest_back, is_setup, secrets, macs, keys]() {
-      auto t0 = clock_start();
-      int stop = (dest_back == 0) ? (n - 1) : (dest_back - 1);
-      int j = (id == 0) ? (n - 1) : (id - 1);
-      while (j != stop) {
-        if (is_setup) setup_with(j);
-        else { extend_with(j, secrets, *macs, *keys, false); stats.peers_pool++; }
-        j = (j == 0) ? (n - 1) : (j - 1);
-      }
-      stats.arc_pool = time_from(t0);
-    });
-    auto t0 = clock_start();
-    int stop = (dest_frnt == n - 1) ? 0 : (dest_frnt + 1);
-    int j = (id == n - 1) ? 0 : (id + 1);
-    while (j != stop) {
-      if (is_setup) setup_with(j);
-      else { extend_with(j, secrets, *macs, *keys, true); stats.peers_main++; }
-      j = (j == n - 1) ? 0 : (j + 1);
+  // run fn(j) for every peer j != id, up to peer_par concurrently (pairs are
+  // independent, each uses only its own channels)
+  template <typename F> void for_each_peer(F fn) {
+    std::vector<std::future<void>> futs;
+    for (int j = 0; j < n; ++j) {
+      if (j == id) continue;
+      futs.push_back(pool->enqueue([fn, j]() { fn(j); }));
     }
-    stats.arc_main = time_from(t0);
-    fut.get();
+    for (auto &f : futs) f.get();
+  }
+  template <typename F> void for_each_index(int cnt, F fn) {
+    std::vector<std::future<void>> futs;
+    for (int i = 0; i < cnt; ++i) futs.push_back(pool->enqueue([fn, i]() { fn(i); }));
+    for (auto &f : futs) f.get();
   }
 
   void setup_with(int j) {
@@ -212,14 +215,13 @@ private:
     ios[j][0]->flush();
   }
 
-  void extend_with(int j, FP *secrets, std::vector<FP *> &macs, std::vector<FP *> &keys, bool main_thread) {
-    double *t = main_thread ? tm_main_ : tm_pool_;
+  // both directions of pair (id, j): the lower id verifies first
+  void extend_with(int j, FP *secrets, std::vector<FP *> &macs, std::vector<FP *> &keys) {
+    double *t = tm_[j].data();
     if (id > j) { commit_round(j, secrets, macs[j], t); verify_round(j, keys[j], t); }
     else        { verify_round(j, keys[j], t); commit_round(j, secrets, macs[j], t); }
-    if (main_thread) {   // fold the pool thread's numbers in after the join (see mesh_run caller)
-    }
   }
-  double tm_main_[4] = {0, 0, 0, 0}, tm_pool_[4] = {0, 0, 0, 0};   // commit_extend, commit_hash, verify_extend, verify_check
+  std::vector<std::vector<double>> tm_;   // per peer: commit_extend, commit_hash, verify_extend, verify_check, wall
 
   // committer side with peer j: u^id (value lane) and M^id_j (MAC lane)
   void commit_round(int j, FP *secrets, FP *macs_j, double *tm) {

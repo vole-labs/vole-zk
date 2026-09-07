@@ -41,11 +41,11 @@ public:
   uint64_t seenBatches = 0;
 
   MvzkExec(int party_, std::size_t threads, std::vector<IO **> ios, std::size_t log_n, std::size_t log_k,
-           std::size_t vole_per_round)
+           std::size_t vole_per_round, std::size_t peer_par = 0)
       : backend((std::size_t)party_, threads, ios), party(party_) {
     n = (std::size_t)1 << log_n;
     prover = ((std::size_t)party_ == n);
-    backend.param(log_n, log_k, vole_per_round);
+    backend.param(log_n, log_k, vole_per_round, peer_par);
   }
 
   // ---- wires ----
@@ -234,8 +234,8 @@ inline bool batch_reveal_check_zero(IntFpT<IO> *obj, int64_t len) {
 // party: verifiers 0..n-1, prover n; ios[j] -> channels to party j.
 template <typename IO>
 inline void setup_mvzk(int party, std::size_t threads, std::vector<IO **> ios, std::size_t log_n, std::size_t log_k,
-                       std::size_t vole_per_round = (1ull << 20)) {
-  MvzkExec<IO>::exec = new MvzkExec<IO>(party, threads, ios, log_n, log_k, vole_per_round);
+                       std::size_t vole_per_round = (1ull << 20), std::size_t peer_par = 0) {
+  MvzkExec<IO>::exec = new MvzkExec<IO>(party, threads, ios, log_n, log_k, vole_per_round, peer_par);
 }
 // runs the batched multiplication check; verifiers abort on a cheating prover
 template <typename IO>

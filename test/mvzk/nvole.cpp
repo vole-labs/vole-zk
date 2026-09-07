@@ -40,11 +40,11 @@ int main(int argc, char **argv) {
     if (bench && round == 1) {
       auto &st = nv.stats;
       if (party == n)
-        std::cout << "  prover: local expansions x" << n << " " << st.prover_local / 1000 << " ms, publish coms " << st.prover_publish / 1000 << " ms" << std::endl;
+        std::cout << "  prover: local expansions x" << n << " on " << st.workers << " workers " << st.prover_local / 1000 << " ms, publish coms " << st.prover_publish / 1000 << " ms" << std::endl;
       else if (party == 0 || party == n - 1)
         std::cout << "  verifier " << party << ": wait coms " << st.wait_coms / 1000 << " ms, mesh wall " << st.mesh_wall / 1000
-                  << " ms [main arc " << st.arc_main / 1000 << " ms/" << st.peers_main << " peers, pool arc " << st.arc_pool / 1000 << " ms/" << st.peers_pool
-                  << " peers]; per direction: committer extend " << st.commit_extend / 1000 << " + hash " << st.commit_hash / 1000
+                  << " ms [" << st.workers << " workers; per-peer wall max " << st.peer_max / 1000 << " / sum " << st.peer_sum / 1000
+                  << " ms]; committer extend " << st.commit_extend / 1000 << " + hash " << st.commit_hash / 1000
                   << ", verifier extend " << st.verify_extend / 1000 << " + check " << st.verify_check / 1000 << " ms (summed over peers)" << std::endl;
     }
 

@@ -124,7 +124,10 @@ F_p with p = 2^59 - 2^28 + 1, on top of vole's committed VOLE:
   reproduces it locally, every ordered pair of verifiers runs a committed
   VOLE, and the prover's published commitments bind each verifier to a
   single input across all its instances (the consistency check the
-  original implementation left incomplete).
+  original implementation left incomplete). Pairs are independent, so a
+  verifier runs all its `n-1` peers concurrently and the prover its `n`
+  local expansions (`peer_par` bounds that; each instance additionally
+  uses `threads` threads for its LPN expansion).
 - `zk/auth.h` — packed-Shamir reinterpretation of the VOLE outputs into
   authenticated additive sharings of `k` values at a time (Π_Prep);
   fresh Fiat-Shamir nonces after every VOLE extension.
@@ -169,18 +172,25 @@ started by the top-level `./run_mvzk <binary> <n+1> [args]` (party ids
 `0..n-1` are verifiers, `n` is the prover); ctest registers them as
 `mvzk_*`, including a soundness test with a cheating prover. Each pair of
 parties needs `max(2, threads)` sockets, `port + (lo*P + hi)*num_io + i`.
-Measured on a 32-vCPU EPYC box, all parties on one host:
+Measured on a 32-core EPYC box with all parties on one host, one thread
+per VOLE instance, 2^20 VOLE rounds (one extension each):
 
-| verifiers `n` | `k` | circuit | per mult gate |
-|---|---|---|---|
-| 4 | 2 | 2^12 mults, 2^14 VOLE rounds | 118 µs (VOLE-bound) |
-| 8 | 4 | 2^19.6 mults, 2^20 VOLE rounds | 28 µs |
-| 16 | 4 | 64³ matmul (2^18 mults), 2^20 VOLE rounds | 209 µs (one 2^20 extension, mostly unused) |
+| verifiers `n` | `k` | circuit | VOLE extension | per mult gate |
+|---|---|---|---|---|
+| 4 | 2 | 2^18.6 mults | 4.8 s | 12.5 µs |
+| 8 | 4 | 2^19.6 mults | 10.4 s | 13.6 µs |
+| 16 | 4 | 64³ matmul (2^18 mults) | 43 s | 166 µs (extension mostly unused) |
 
-The cost is dominated by the committed VOLE (about 100x a plain VOLE
-correlation), which every ordered pair of verifiers runs: the fixed cost
-of one extension at `n = 16` is ~55 s on one host and amortises over
-`k · 2^20` wires. The ring variant of the paper is not implemented.
+The cost is the committed VOLE: one direction of one pair costs ~1.9 s
+per 2^20 correlations (1.8 µs each, vole's native speed, half LPN
+expansion and half the commitment), and every verifier runs 2(n-1)
+directions. They run concurrently per peer, so on one machine per
+verifier an extension takes about one pair's time (~4 s) plus the
+prover's parallel local expansions (~1 s) regardless of `n`; co-located
+on one box the runs above are bound by the total CPU work
+(n · 2(n-1) · 1.9 s over 32 cores). Each instance can additionally use
+`threads` threads for its LPN expansion. The ring variant of the paper is
+not implemented.
 
 ## Benchmarks
 

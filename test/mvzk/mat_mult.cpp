@@ -1,5 +1,5 @@
 // (n+1)-party matrix multiplication proof C = A * B (dim x dim), the paper's
-// benchmark circuit. usage: test_mvzk_mat_mult <party> <port> [log_k=1] [log_n=2] [dim=64] [vole_per_round=16384]
+// benchmark circuit. usage: test_mvzk_mat_mult <party> <port> [log_k=1] [log_n=2] [dim=64] [vole_per_round=16384] [threads=1] [peer_par=0]
 #include "test_mvzk.h"
 #include "emp-zk/mvzk/mvzk.h"
 #include <iostream>
@@ -17,11 +17,13 @@ int main(int argc, char **argv) {
   int log_n = (argc > 4) ? atoi(argv[4]) : 2;
   std::size_t dim = (argc > 5) ? (std::size_t)atoll(argv[5]) : 64;
   std::size_t per_round = (argc > 6) ? (std::size_t)atoll(argv[6]) : (1u << 14);
+  std::size_t threads = (argc > 7) ? (std::size_t)atoi(argv[7]) : 1;
+  std::size_t peer_par = (argc > 8) ? (std::size_t)atoi(argv[8]) : 0;
   int n = 1 << log_n;
-  MeshIO mesh(party, n + 1, port, 2);
+  MeshIO mesh(party, n + 1, port, std::max<std::size_t>(2, threads));
 
-  MvzkBackend<NetIO, T, S> backend(party, 1, mesh.ios);
-  backend.param(log_n, log_k, per_round);
+  MvzkBackend<NetIO, T, S> backend(party, threads, mesh.ios);
+  backend.param(log_n, log_k, per_round, peer_par);
   auto t0 = clock_start();
   if (party == n) {
     PRG prg;
