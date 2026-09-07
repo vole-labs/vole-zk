@@ -205,7 +205,12 @@ public:
     cot_pos_ = 0;
     cot_have_ = nch * chunk;
   }
-  void bg_next_slot_() {
+  // Cold: the background-pipe wait (mutex + condvar). Kept out of line so
+  // GCC does not inline it into the per-gate and_block path -- when it did
+  // (after the F2k adapter changed the inliner's estimates for this TU) the
+  // hot path grew an exception landing pad and a stack-protector check and
+  // lost ~5% on 105M gates.
+  __attribute__((noinline, cold)) void bg_next_slot_() {
     // About to (possibly) block waiting for the producer to fill the next
     // round-buffer, whose fill is a CROSS-PARTY Ferret round-trip. FLUSH the
     // main socket first so the peer receives everything up to our position,
