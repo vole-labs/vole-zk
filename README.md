@@ -117,7 +117,8 @@ and `setup_zk_arith(io, party, threads, expected_vole, vole_io, vole_threads)`.
 `emp-zk/mvzk` implements the multi-verifier zero-knowledge protocol of
 [Escudero, Polychroniadou, Song, Weng](https://eprint.iacr.org/2022/1750)
 (one prover, `n` verifiers, up to `t = n - k` of them corrupt) over
-F_p with p = 2^59 - 2^28 + 1, on top of vole's committed VOLE:
+F_p with p = 2^59 - 2^28 + 1, on top of vole's n-party VOLEs (primal-LPN
+by default, committed dual-LPN as an alternative):
 
 - `nvole_primal.h` (default) — the programmable n-party VOLE of the paper
   (Π_nVOLE) on vole's primal-LPN `MVoleFp`: every pair of verifiers runs a
@@ -183,8 +184,9 @@ detecting party, and its peers die on socket errors.
 Tests live in `test/mvzk/` and are (n+1)-party processes on localhost,
 started by the top-level `./run_mvzk <binary> <n+1> [args]` (party ids
 `0..n-1` are verifiers, `n` is the prover); ctest registers them as
-`mvzk_*`, including a soundness test with a cheating prover. Each pair of
-parties needs `max(2, threads)` sockets, `port + (lo*P + hi)*num_io + i`.
+`mvzk_*`, including soundness tests with a cheating prover. Each pair of
+parties uses `max(2, threads)` data sockets plus one control socket, at
+`port + (lo*P + hi)*(num_io + 1) + i` (see `test/mvzk/test_mvzk.h`).
 Measured on a 32-core EPYC box with all parties on one host, one thread
 per VOLE instance, one extension each:
 
