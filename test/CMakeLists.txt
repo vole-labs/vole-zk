@@ -89,3 +89,8 @@ add_test(NAME mvzk_int_fp_cheat
          COMMAND ${PROJECT_SOURCE_DIR}/run_mvzk $<TARGET_FILE:test_mvzk_int_fp> 5 1 2 8 16384 1
          WORKING_DIRECTORY ${PROJECT_SOURCE_DIR})
 set_tests_properties(mvzk_int_fp_cheat PROPERTIES PASS_REGULAR_EXPRESSION "mvzk: opened value does not match its MAC")
+add_mvzk_test(int_fp_vec 5 1 2 1000 16384)   # IntFpVec element-wise API
+add_test(NAME mvzk_int_fp_vec_cheat
+         COMMAND ${PROJECT_SOURCE_DIR}/run_mvzk $<TARGET_FILE:test_mvzk_int_fp_vec> 5 1 2 100 16384 1
+         WORKING_DIRECTORY ${PROJECT_SOURCE_DIR})
+set_tests_properties(mvzk_int_fp_vec_cheat PROPERTIES PASS_REGULAR_EXPRESSION "mvzk: opened value does not match its MAC")

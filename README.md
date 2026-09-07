@@ -146,7 +146,11 @@ F_p with p = 2^59 - 2^28 + 1, on top of vole's committed VOLE:
   resolved when a multiplication or a reveal needs it, so no flush is
   forced and packing stays full. Outputs are checked with a batched,
   zero-share-masked MAC check among the verifiers (`reveal`,
-  `reveal(expected)`, `reveal_zero`, `batch_reveal*`).
+  `reveal(expected)`, `reveal_zero`, `batch_reveal*`). `int_fp_vec.h`
+  adds `IntFpVec` with emp-zk-arith's element-wise API (`+ - *` with
+  vectors, public scalars and public vectors, `operator[]`, `sum`, `dot`,
+  `compose` / `decompose`, batched `reveal` / `reveal_check`); it is a
+  convenience layer, packing is already done by the backend.
 
 ```cpp
 #include "emp-zk/mvzk/mvzk.h"

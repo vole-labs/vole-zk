@@ -10,4 +10,5 @@
 #include "emp-zk/mvzk/mesh.h"
 #include "emp-zk/mvzk/zk/backend.h"
 #include "emp-zk/mvzk/int_fp.h"
+#include "emp-zk/mvzk/int_fp_vec.h"
 #endif
