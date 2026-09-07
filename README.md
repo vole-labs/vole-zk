@@ -119,15 +119,20 @@ and `setup_zk_arith(io, party, threads, expected_vole, vole_io, vole_threads)`.
 (one prover, `n` verifiers, up to `t = n - k` of them corrupt) over
 F_p with p = 2^59 - 2^28 + 1, on top of vole's committed VOLE:
 
-- `nvole.h` — programmable n-party VOLE (paper protocol Π_nVOLE) built
-  from vole's `CVoleFp`: the prover seeds every verifier's VOLE input and
-  reproduces it locally, every ordered pair of verifiers runs a committed
-  VOLE, and the prover's published commitments bind each verifier to a
-  single input across all its instances (the consistency check the
-  original implementation left incomplete). Pairs are independent, so a
-  verifier runs all its `n-1` peers concurrently and the prover its `n`
-  local expansions (`peer_par` bounds that; each instance additionally
-  uses `threads` threads for its LPN expansion).
+- `nvole_primal.h` (default) — the programmable n-party VOLE of the paper
+  (Π_nVOLE) on vole's primal-LPN `MVoleFp`: every pair of verifiers runs a
+  plain `VoleTriple` at the primal rate, a verifier reuses one programming
+  seed towards all peers, the prover regenerates every u^i locally, and the
+  verifiers run the paper's consistency check (fold with a fresh coin,
+  zero-sharings, commit-and-open) after every extension. One extension
+  yields ~10^7 correlations per party (Wolverine's F_p parameters) and
+  needs ~1.2 GB per verifier at n = 4, ~3 GB at n = 8.
+- `nvole.h` (`NVoleKind::Committed`) — the same interface on vole's
+  dual-LPN committed VOLE `CVoleFp`: the prover's published commitments
+  bind each verifier to a single input, no interactive consistency check,
+  2^20 correlations per extension (`vole_per_round`), pairs run
+  concurrently (`peer_par`). About 25x slower per correlation; kept for
+  comparison and for memory-constrained settings.
 - `zk/auth.h` — packed-Shamir reinterpretation of the VOLE outputs into
   authenticated additive sharings of `k` values at a time (Π_Prep);
   fresh Fiat-Shamir nonces after every VOLE extension.
@@ -181,24 +186,23 @@ started by the top-level `./run_mvzk <binary> <n+1> [args]` (party ids
 `mvzk_*`, including a soundness test with a cheating prover. Each pair of
 parties needs `max(2, threads)` sockets, `port + (lo*P + hi)*num_io + i`.
 Measured on a 32-core EPYC box with all parties on one host, one thread
-per VOLE instance, 2^20 VOLE rounds (one extension each):
+per VOLE instance, one extension each:
 
-| verifiers `n` | `k` | circuit | VOLE extension | per mult gate |
-|---|---|---|---|---|
-| 4 | 2 | 2^18.6 mults | 4.8 s | 12.5 µs |
-| 8 | 4 | 2^19.6 mults | 10.4 s | 13.6 µs |
-| 16 | 4 | 64³ matmul (2^18 mults) | 43 s | 166 µs (extension mostly unused) |
+| verifiers `n` | `k` | circuit | VOLE, primal (default) | VOLE, committed 2^20 | per mult gate (primal) |
+|---|---|---|---|---|---|
+| 4 | 2 | 2^18.6 mults | 1.0 s | 4.8 s | 3.0 µs |
+| 8 | 4 | 2^19.6 mults | 2.1 s | 10.4 s | 3.3 µs |
+| 8 | 4 | IntFp 64³ matmul | 2.3 s total | 10.6 s total | |
 
-The cost is the committed VOLE: one direction of one pair costs ~1.9 s
-per 2^20 correlations (1.8 µs each, vole's native speed, half LPN
-expansion and half the commitment), and every verifier runs 2(n-1)
-directions. They run concurrently per peer, so on one machine per
-verifier an extension takes about one pair's time (~4 s) plus the
-prover's parallel local expansions (~1 s) regardless of `n`; co-located
-on one box the runs above are bound by the total CPU work
-(n · 2(n-1) · 1.9 s over 32 cores). Each instance can additionally use
-`threads` threads for its LPN expansion. The ring variant of the paper is
-not implemented.
+The proof layer itself is small: conversion under 0.1 s and the
+multiplication checks tens of milliseconds even for 800k gates. With the
+primal backend the extension delivers ~10^7 packed sharings (k · 10^7
+wires) so small circuits pay for far more than they use; the committed
+backend's cost is dominated by its pairwise committed VOLEs (~1.9 s per
+direction and 2^20 correlations, vole's native speed). 16 verifiers with
+the primal backend do not fit on one 61 GB host (~5-6 GB per verifier);
+run them on separate machines or use the committed backend. The ring
+variant of the paper is not implemented.
 
 ## Benchmarks
 

@@ -8,11 +8,19 @@
 #include "emp-zk/mvzk/utils/poly.h"
 #include "emp-zk/mvzk/utils/utils.h"
 #include "emp-zk/mvzk/nvole.h"
+#include "emp-zk/mvzk/nvole_primal.h"
 #include "emp-zk/mvzk/mesh.h"
 #include "emp-zk/mvzk/zk/utils.h"
 
 namespace emp {
 namespace mvzk {
+
+// Which n-party VOLE backs the preprocessing:
+//   Primal    - vole/mvole.h, primal LPN, ~10^7 correlations per extend,
+//               consistency check per the paper (default)
+//   Committed - vole/cvole.h, dual-LPN committed VOLE, 2^20 per extend by
+//               default (vole_per_round), ~25x slower per correlation
+enum class NVoleKind { Primal, Committed };
 
 template <typename IO, typename T, typename S>
 class Auth {
@@ -22,7 +30,9 @@ public:
   std::vector<IO **> ios;
   PRG prg;
 
-  MvzkNVole<IO, T, S> *nvole = nullptr;
+  NVoleKind kind = NVoleKind::Primal;
+  MvzkNVole<IO, T, S> *nvole = nullptr;             // Committed
+  MvzkNVolePrimal<IO, T, S> *nvole_primal = nullptr; // Primal
   std::size_t usable = 0, ptr = 0;  // correlations per extend / consumed so far
   std::vector<T> secrets;           // verifier: u^i
   std::vector<std::vector<T>> macs, keys;      // verifier: M^i_j, K^i_j
@@ -34,18 +44,25 @@ public:
   double timeVOLE = 0.0, timeConversion = 0.0;
 
   Auth(std::size_t id_party_, std::size_t k_, std::size_t n_, std::size_t threads_,
-       std::vector<IO **> ios_, std::size_t vole_per_round, std::size_t peer_par = 0)
-      : id_party(id_party_), k(k_), n(n_), threads(threads_), ios(ios_) {
-    nvole = new MvzkNVole<IO, T, S>((int)id_party_, (int)n_, threads_, ios, vole_per_round, 1, peer_par);
-    nvole->setup();
-    usable = nvole->usable();
+       std::vector<IO **> ios_, std::size_t vole_per_round, std::size_t peer_par = 0,
+       NVoleKind kind_ = NVoleKind::Primal)
+      : id_party(id_party_), k(k_), n(n_), threads(threads_), ios(ios_), kind(kind_) {
+    if (kind == NVoleKind::Primal) {
+      nvole_primal = new MvzkNVolePrimal<IO, T, S>((int)id_party_, (int)n_, threads_, ios);
+      nvole_primal->setup();
+      usable = nvole_primal->usable();
+    } else {
+      nvole = new MvzkNVole<IO, T, S>((int)id_party_, (int)n_, threads_, ios, vole_per_round, 1, peer_par);
+      nvole->setup();
+      usable = nvole->usable();
+    }
     ptr = usable;
     if (is_prover()) {
       secretsGroup.assign(n, std::vector<T>(usable));
       secrets_ptr.resize(n);
       for (std::size_t i = 0; i < n; ++i) secrets_ptr[i] = secretsGroup[i].data();
     } else {
-      delta = nvole->delta;
+      delta = (kind == NVoleKind::Primal) ? nvole_primal->delta : nvole->delta;
       secrets.resize(usable);
       macs.assign(n, std::vector<T>());
       keys.assign(n, std::vector<T>());
@@ -60,7 +77,7 @@ public:
     flush_io(ios, threads);
     nonces(id_party, n, ios, allNonces, prg);
   }
-  ~Auth() { delete nvole; }
+  ~Auth() { delete nvole; delete nvole_primal; }
 
   bool is_prover() const { return id_party == n; }
 
@@ -69,8 +86,13 @@ public:
   void refill() {
     auto t0 = clock_start();
     flush_io(ios, threads);
-    if (is_prover()) nvole->extend_prover(secrets_ptr);
-    else             nvole->extend_verifier(secrets.data(), macs_ptr, keys_ptr);
+    if (kind == NVoleKind::Primal) {
+      if (is_prover()) nvole_primal->extend_prover(secrets_ptr);
+      else             nvole_primal->extend_verifier(secrets.data(), macs_ptr, keys_ptr);
+    } else {
+      if (is_prover()) nvole->extend_prover(secrets_ptr);
+      else             nvole->extend_verifier(secrets.data(), macs_ptr, keys_ptr);
+    }
     flush_io(ios, threads);
     ptr = 0;
     ++extendCount;

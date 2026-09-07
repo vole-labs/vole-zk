@@ -1,5 +1,5 @@
 // (n+1)-party matrix multiplication proof C = A * B (dim x dim), the paper's
-// benchmark circuit. usage: test_mvzk_mat_mult <party> <port> [log_k=1] [log_n=2] [dim=64] [vole_per_round=16384] [threads=1] [peer_par=0]
+// benchmark circuit. usage: test_mvzk_mat_mult <party> <port> [log_k=1] [log_n=2] [dim=64] [vole_per_round=16384; 0 = primal n-party VOLE] [threads=1] [peer_par=0]
 #include "test_mvzk.h"
 #include "emp-zk/mvzk/mvzk.h"
 #include <iostream>
@@ -23,7 +23,8 @@ int main(int argc, char **argv) {
   MeshIO mesh(party, n + 1, port, std::max<std::size_t>(2, threads));
 
   MvzkBackend<NetIO, T, S> backend(party, threads, mesh.ios);
-  backend.param(log_n, log_k, per_round, peer_par);
+  backend.param(log_n, log_k, per_round ? per_round : (1ull << 20), peer_par,
+                per_round ? NVoleKind::Committed : NVoleKind::Primal);
   backend.set_abort_channels(mesh.ctrl);
   auto t0 = clock_start();
   if (party == n) {

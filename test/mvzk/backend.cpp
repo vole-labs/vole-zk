@@ -1,6 +1,6 @@
 // (n+1)-party end-to-end test of the MVZK backend: inputs, additions,
 // multiplications (including a partial last batch), then the final check.
-// usage: test_mvzk_backend <party> <port> [log_k=1] [log_n=2] [log_mults=12] [vole_per_round=16384] [threads=1] [cheat=0] [peer_par=0]
+// usage: test_mvzk_backend <party> <port> [log_k=1] [log_n=2] [log_mults=12] [vole_per_round=16384; 0 = primal n-party VOLE] [threads=1] [cheat=0] [peer_par=0]
 // cheat=1 makes the prover claim one wrong product; the verifiers must abort.
 #include "test_mvzk.h"
 #include "emp-zk/mvzk/mvzk.h"
@@ -28,7 +28,8 @@ int main(int argc, char **argv) {
 
   MvzkBackend<NetIO, T, S> backend(party, threads, mesh.ios);
   auto t0 = clock_start();
-  backend.param(log_n, log_k, per_round, peer_par);
+  backend.param(log_n, log_k, per_round ? per_round : (1ull << 20), peer_par,
+                per_round ? NVoleKind::Committed : NVoleKind::Primal);
   backend.set_abort_channels(mesh.ctrl);
   double t_setup = time_from(t0);
   t0 = clock_start();

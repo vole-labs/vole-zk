@@ -63,7 +63,12 @@ add_test_case_with_run(ram-zk set_test)
 # ---------------------------------------------------------------------
 function(add_mvzk_test name nparties)
     set(target test_mvzk_${name})
-    add_executable(${target} mvzk/${name}.cpp)
+    set(_src mvzk/${name}.cpp)
+    if(NOT EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/${_src})   # e.g. int_fp_primal -> int_fp.cpp
+        string(REGEX REPLACE "_[a-z]+$" "" _base ${name})
+        set(_src mvzk/${_base}.cpp)
+    endif()
+    add_executable(${target} ${_src})
     target_link_libraries(${target} PRIVATE emp-zk::emp-zk)
     set_target_properties(${target} PROPERTIES
         RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}")
@@ -90,6 +95,7 @@ add_test(NAME mvzk_int_fp_cheat
          WORKING_DIRECTORY ${PROJECT_SOURCE_DIR})
 set_tests_properties(mvzk_int_fp_cheat PROPERTIES PASS_REGULAR_EXPRESSION "mvzk: opened value does not match its MAC" FAIL_REGULAR_EXPRESSION "peer closed")
 add_mvzk_test(int_fp_vec 5 1 2 1000 16384)   # IntFpVec element-wise API
+add_mvzk_test(int_fp_primal 5 1 2 16 0)      # IntFp on the primal n-party VOLE (default backend)
 add_test(NAME mvzk_int_fp_vec_cheat
          COMMAND ${PROJECT_SOURCE_DIR}/run_mvzk $<TARGET_FILE:test_mvzk_int_fp_vec> 5 1 2 100 16384 1
          WORKING_DIRECTORY ${PROJECT_SOURCE_DIR})

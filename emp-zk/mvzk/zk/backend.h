@@ -26,18 +26,19 @@ public:
   }
 
   // n = 2^log_n verifiers, k = 2^log_k secrets per packed sharing (t = n - k
-  // corruptions tolerated); vole_per_round picks the LPN scale of the
-  // committed VOLE (2^20 default; 2^14 is a test scale). peer_par bounds how
-  // many pairwise VOLEs a verifier (and local expansions the prover) runs
+  // corruptions tolerated). kind selects the n-party VOLE (NVoleKind::Primal,
+  // the default, or Committed). For Committed, vole_per_round picks the LPN
+  // scale (2^20 default; 2^14 is a test scale) and peer_par bounds how many
+  // pairwise VOLEs a verifier (and local expansions the prover) runs
   // concurrently, 0 = all; each of them additionally uses `threads` threads.
   void param(std::size_t log_n, std::size_t log_k, std::size_t vole_per_round = (1ull << 20),
-             std::size_t peer_par = 0) {
+             std::size_t peer_par = 0, NVoleKind kind = NVoleKind::Primal) {
     n_server = (std::size_t)1 << log_n;
     n_honest_server = (std::size_t)1 << log_k;
     if (n_server < 2 || log_k >= log_n) error("mvzk: need n >= 2 and k < n");
     poly = new Poly<T>(log_k, log_n);
     poly->initLagrangeTable();
-    auth = new Auth<IO, T, S>(id_party, n_honest_server, n_server, threads, ios, vole_per_round, peer_par);
+    auth = new Auth<IO, T, S>(id_party, n_honest_server, n_server, threads, ios, vole_per_round, peer_par, kind);
     if (is_prover()) {
       prover = new Prover<IO, T, S>(n_honest_server, n_server);
     } else {

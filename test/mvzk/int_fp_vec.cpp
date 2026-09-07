@@ -1,6 +1,6 @@
 // (n+1)-party test of IntFpVec: element-wise ops, public scalars / vectors,
 // sum, dot, compose / decompose, batched reveal and reveal_check.
-// usage: test_mvzk_int_fp_vec <party> <port> [log_k=1] [log_n=2] [len=1000] [vole_per_round=16384] [cheat=0]
+// usage: test_mvzk_int_fp_vec <party> <port> [log_k=1] [log_n=2] [len=1000] [vole_per_round=16384; 0 = primal n-party VOLE] [cheat=0]
 #include "test_mvzk.h"
 #include "emp-zk/mvzk/mvzk.h"
 #include <iostream>
@@ -21,7 +21,8 @@ int main(int argc, char **argv) {
   bool cheat = (argc > 7) && atoi(argv[7]) != 0;
   int n = 1 << log_n;
   MeshIO mesh(party, n + 1, port, 2);
-  setup_mvzk<NetIO>(party, 1, mesh.ios, log_n, log_k, per_round, 0, mesh.ctrl);
+  setup_mvzk<NetIO>(party, 1, mesh.ios, log_n, log_k, per_round ? per_round : (1ull << 20), 0, mesh.ctrl,
+                    per_round ? NVoleKind::Committed : NVoleKind::Primal);
 
   std::vector<uint64_t> x(len), y(len), c(len);
   block seed = makeBlock(0x766563ULL, 0x696e745f6670ULL);
