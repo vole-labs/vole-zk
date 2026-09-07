@@ -125,15 +125,13 @@ by default, committed dual-LPN as an alternative):
   plain `VoleTriple` at the primal rate, a verifier reuses one programming
   seed towards all peers, the prover regenerates every u^i locally, and the
   verifiers run the paper's consistency check (fold with a fresh coin,
-  zero-sharings, commit-and-open) after every extension. One extension
-  yields ~10^7 correlations per party (Wolverine's F_p parameters) and
-  needs ~1.2 GB per verifier at n = 4, ~3 GB at n = 8.
+  zero-sharings, commit-and-open) after every extension. Uses
+  Wolverine's F_p LPN parameters.
 - `nvole.h` (`NVoleKind::Committed`) — the same interface on vole's
   dual-LPN committed VOLE `CVoleFp`: the prover's published commitments
   bind each verifier to a single input, no interactive consistency check,
-  2^20 correlations per extension (`vole_per_round`), pairs run
-  concurrently (`peer_par`). About 25x slower per correlation; kept for
-  comparison and for memory-constrained settings.
+  LPN scale set by `vole_per_round`, pairs run concurrently (`peer_par`).
+  Kept for comparison and for memory-constrained settings.
 - `zk/auth.h` — packed-Shamir reinterpretation of the VOLE outputs into
   authenticated additive sharings of `k` values at a time (Π_Prep);
   fresh Fiat-Shamir nonces after every VOLE extension.
@@ -187,24 +185,7 @@ started by the top-level `./run_mvzk <binary> <n+1> [args]` (party ids
 `mvzk_*`, including soundness tests with a cheating prover. Each pair of
 parties uses `max(2, threads)` data sockets plus one control socket, at
 `port + (lo*P + hi)*(num_io + 1) + i` (see `test/mvzk/test_mvzk.h`).
-Measured on a 32-core EPYC box with all parties on one host, one thread
-per VOLE instance, one extension each:
-
-| verifiers `n` | `k` | circuit | VOLE, primal (default) | VOLE, committed 2^20 | per mult gate (primal) |
-|---|---|---|---|---|---|
-| 4 | 2 | 2^18.6 mults | 1.0 s | 4.8 s | 3.0 µs |
-| 8 | 4 | 2^19.6 mults | 2.1 s | 10.4 s | 3.3 µs |
-| 8 | 4 | IntFp 64³ matmul | 2.3 s total | 10.6 s total | |
-
-The proof layer itself is small: conversion under 0.1 s and the
-multiplication checks tens of milliseconds even for 800k gates. With the
-primal backend the extension delivers ~10^7 packed sharings (k · 10^7
-wires) so small circuits pay for far more than they use; the committed
-backend's cost is dominated by its pairwise committed VOLEs (~1.9 s per
-direction and 2^20 correlations, vole's native speed). 16 verifiers with
-the primal backend do not fit on one 61 GB host (~5-6 GB per verifier);
-run them on separate machines or use the committed backend. The ring
-variant of the paper is not implemented.
+The ring variant of the paper is not implemented.
 
 ## Benchmarks
 
