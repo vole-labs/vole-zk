@@ -11,6 +11,10 @@ using namespace std;
 // byte that actually crosses the wire — packed gate bits, byte sends, Ferret
 // OT — in true wire order. Callers read it via `io->get_digest()` on the inner
 // channel; there is no separate hash here to keep in sync.
+// The constructor takes a third argument since this change: BoolIO(io, sender,
+// transcript).  Callers test this macro to pass it.
+#define EMP_ZK_BOOLIO_TRANSCRIPT_FLAG 1
+
 class BoolIO : public IOChannel {
 public:
   IOChannel *io;
@@ -20,11 +24,17 @@ public:
   std::unique_ptr<bool[]> buf;
   int ptr;
   bool sender;
-  BoolIO(IOChannel *io, int sender) : io(io), sender(sender) {
+  // transcript: hash every byte of the inner channel for the Fiat-Shamir
+  // challenges of emp-zk-bool and of permutation proofs (default, as before).
+  // A caller whose challenges are all verifier-sent (emp-zk-arith alone) can
+  // pass false and skip the hash, which costs about 9 s per GB on processors
+  // without SHA instructions.  The VOLE's own consistency checks enable the
+  // transcript on the channel they are given, so they are not affected.
+  BoolIO(IOChannel *io, int sender, bool transcript = true) : io(io), sender(sender) {
     // FS transcript on the inner channel; exactly one party passes true and
     // sender (= party == ALICE) satisfies that. Guard so re-wrapping a channel
     // that already has FS on is a no-op rather than an assert / reset.
-    if (!io->fs_enabled())
+    if (transcript && !io->fs_enabled())
       io->enable_fs(sender);
     buf.reset(new bool[NETWORK_STAGING_BUFFER_SIZE]);
     if (sender)
