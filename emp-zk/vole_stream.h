@@ -53,7 +53,7 @@ struct VoleChannels {
     a.sin_family = AF_INET;
     a.sin_addr.s_addr = htonl(INADDR_ANY);
     a.sin_port = 0;
-    if (bind(ls, (sockaddr *)&a, sizeof(a)) < 0) error("VoleChannels: bind()");
+    if (::bind(ls, (sockaddr *)&a, sizeof(a)) < 0) error("VoleChannels: bind()");
     if (listen(ls, 1) < 0) error("VoleChannels: listen()");
     socklen_t len = sizeof(a);
     getsockname(ls, (sockaddr *)&a, &len);
