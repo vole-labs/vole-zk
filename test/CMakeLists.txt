@@ -53,6 +53,32 @@ add_test_case_with_run(arith mixed_check)
 add_test_case_with_run(arith matrix_mul)
 add_test_case_with_run(arith sis)
 
+# Field-generic arithmetic ZK (emp-zk-arith/generic/) over vole's fields:
+# honest runs (single socket, background VOLE socket, caller-supplied Delta) and
+# cheating provers that the verifier must reject.
+set(_fz ${CMAKE_BINARY_DIR}/test_arith_field_zk)
+add_executable(test_arith_field_zk arith/field_zk.cpp)
+target_link_libraries(test_arith_field_zk PRIVATE emp-zk::emp-zk)
+set_target_properties(test_arith_field_zk PROPERTIES RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}")
+add_executable(test_arith_field_select arith/field_select.cpp)
+target_link_libraries(test_arith_field_select PRIVATE emp-zk::emp-zk)
+set_target_properties(test_arith_field_select PROPERTIES RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}")
+add_test(NAME arith_field_select COMMAND ${PROJECT_SOURCE_DIR}/run $<TARGET_FILE:test_arith_field_select> honest
+         WORKING_DIRECTORY ${PROJECT_SOURCE_DIR})
+add_test(NAME arith_field_select_cheat_link COMMAND ${PROJECT_SOURCE_DIR}/run $<TARGET_FILE:test_arith_field_select> cheat_link
+         WORKING_DIRECTORY ${PROJECT_SOURCE_DIR})
+set_tests_properties(arith_field_select_cheat_link PROPERTIES WILL_FAIL TRUE TIMEOUT 300)
+foreach(_f fp61g fp107 p192 f2k)
+    foreach(_m honest bg delta cheat_mul cheat_reveal cheat_poly cheat_deg2)
+        add_test(NAME arith_field_${_f}_${_m}
+                 COMMAND ${PROJECT_SOURCE_DIR}/run $<TARGET_FILE:test_arith_field_zk> ${_f} ${_m}
+                 WORKING_DIRECTORY ${PROJECT_SOURCE_DIR})
+        if(_m MATCHES "^cheat_")
+            set_tests_properties(arith_field_${_f}_${_m} PROPERTIES WILL_FAIL TRUE TIMEOUT 300)
+        endif()
+    endforeach()
+endforeach()
+
 # RAM ZK
 add_test_case_with_run(ram-zk ram_test)
 add_test_case_with_run(ram-zk rom_test)

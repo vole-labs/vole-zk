@@ -20,3 +20,4 @@ add_bench(bool memory_scalability)
 # Arithmetic ZK
 add_bench(arith input_scalability)
 add_bench(arith circuit_scalability)
+add_bench(arith field_bench)   # per-field throughput: tuned FP61 engine vs the generic engine (fp61g, fp107, p192, f2k)

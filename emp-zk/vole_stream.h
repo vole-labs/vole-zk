@@ -53,7 +53,7 @@ struct VoleChannels {
     a.sin_family = AF_INET;
     a.sin_addr.s_addr = htonl(INADDR_ANY);
     a.sin_port = 0;
-    if (bind(ls, (sockaddr *)&a, sizeof(a)) < 0) error("VoleChannels: bind()");
+    if (::bind(ls, (sockaddr *)&a, sizeof(a)) < 0) error("VoleChannels: bind()");
     if (listen(ls, 1) < 0) error("VoleChannels: listen()");
     socklen_t len = sizeof(a);
     getsockname(ls, (sockaddr *)&a, &len);
@@ -158,6 +158,61 @@ public:
           out[done + i].val = 0;
           out[done + i].mac = raw[i];
         }
+      }
+    }
+  }
+};
+
+// Authenticated value over any vole field FP: the prover holds (x, M), the
+// verifier (0, K), with M = K + x * Delta. Used by the field-generic
+// arithmetic engine (emp-zk-arith/generic/); the FP61 engine keeps its packed
+// __uint128_t labels (FpVoleStream above).
+template <class FP>
+struct AuthF {
+  FP val;
+  FP mac;
+};
+
+// Random VOLE over any vole field (RVole<FP, FPS>) as AuthF<FP>. vole's
+// value||MAC bundle FPS carries the MAC in its low lane and the value in its
+// high lane (getLow / getHigh).
+template <class FP, class FPS>
+class FieldVoleStream {
+public:
+  using Src = RVole<IOChannel, FP, FPS>;
+  int party;
+  VoleChannels ch;
+  Src *src = nullptr;
+  std::vector<FPS> vm_;
+  std::vector<FP> key_;
+  static constexpr int64_t CH = 4096;
+
+  // `delta` is the verifier's (BOB's) Delta; ignored on the prover.
+  FieldVoleStream(int party, IOChannel *io, int threads, const FP &delta)
+      : party(party), ch(io, threads) {
+    src = new Src(3 - party, (std::size_t)ch.threads, ch.ios.data());
+    if (party == BOB) src->setup(delta);
+    else              src->setup();
+  }
+  ~FieldVoleStream() { delete src; }
+
+  int64_t round_size() const { return (int64_t)src->ot_limit(); }
+
+  void next_n(AuthF<FP> *out, int64_t n) {
+    if (party == ALICE) {
+      if ((int64_t)vm_.size() < CH) vm_.resize(CH);
+      for (int64_t done = 0; done < n; done += CH) {
+        const int64_t m = std::min(CH, n - done);
+        src->rvole_recv(vm_.data(), (std::size_t)m);
+        for (int64_t i = 0; i < m; ++i)
+          out[done + i] = AuthF<FP>{vm_[i].getHigh(), vm_[i].getLow()};
+      }
+    } else {
+      if ((int64_t)key_.size() < CH) key_.resize(CH);
+      for (int64_t done = 0; done < n; done += CH) {
+        const int64_t m = std::min(CH, n - done);
+        src->rvole_send(key_.data(), (std::size_t)m);
+        for (int64_t i = 0; i < m; ++i) out[done + i] = AuthF<FP>{FP(), key_[i]};
       }
     }
   }
