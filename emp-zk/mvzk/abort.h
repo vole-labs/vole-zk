@@ -46,7 +46,7 @@ public:
   // e.g. the prover learns the verifiers' verdict before returning.
   void stop(bool wait_peers = true) {
     if (stopped.exchange(true)) return;
-    for (int j = 0; j < P; ++j) if (j != id && ctrl[j]) send_msg(ctrl[j]->sock, DONE, "");
+    for (int j = 0; j < P; ++j) if (j != id && ctrl[j]) send_msg(ctrl[j]->fd(), DONE, "");
     if (!wait_peers) {
       char c = 1;
       if (::write(wake[1], &c, 1) < 0) {}
@@ -59,7 +59,7 @@ public:
     if (aborting.exchange(true)) { std::_Exit(1); }
     std::printf("mvzk: party %d aborting: %s\n", id, what);
     std::fflush(stdout);
-    for (int j = 0; j < P; ++j) if (j != id && ctrl[j]) send_msg(ctrl[j]->sock, ABORT, what);
+    for (int j = 0; j < P; ++j) if (j != id && ctrl[j]) send_msg(ctrl[j]->fd(), ABORT, what);
     std::_Exit(1);
   }
 
@@ -91,7 +91,7 @@ private:
     std::vector<int> who;
     for (int j = 0; j < P; ++j) {
       if (j == id || !ctrl[j]) continue;
-      pfds.push_back({ctrl[j]->sock, POLLIN, 0});
+      pfds.push_back({ctrl[j]->fd(), POLLIN, 0});
       who.push_back(j);
     }
     pfds.push_back({wake[0], POLLIN, 0});

@@ -30,7 +30,7 @@ void test_stress(BoolIO *io, BoolIO *vole_io, int party, int iters,
 
   auto start = clock_start();
   for (int it = 0; it < iters; ++it) {
-    prg.random_data(w.data(), 2 * sz * sizeof(uint64_t));
+    prg.random_data_unaligned(w.data(), 2 * sz * sizeof(uint64_t));
     for (int64_t i = 0; i < 2 * sz; ++i) w[i] %= PR;
 
     // one big bursty commitment (2*sz values → 2*sz draws from the pipe)

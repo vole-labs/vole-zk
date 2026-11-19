@@ -24,15 +24,15 @@ void test_mixed(BoolIO *io, int party, int64_t N, int sz) {
 
   // Multiplication witnesses + expected products.
   vector<uint64_t> av(N), bv(N), exp_prod(N);
-  prg.random_data(av.data(), N * sizeof(uint64_t));
-  prg.random_data(bv.data(), N * sizeof(uint64_t));
+  prg.random_data_unaligned(av.data(), N * sizeof(uint64_t));
+  prg.random_data_unaligned(bv.data(), N * sizeof(uint64_t));
   for (int64_t i = 0; i < N; ++i) {
     av[i] %= PR; bv[i] %= PR;
     exp_prod[i] = mult_mod(av[i], bv[i]);
   }
   // Inner-product witnesses: prove Σ x_i·x_{sz+i} + constant == 0.
   vector<uint64_t> xv(2 * sz);
-  prg.random_data(xv.data(), 2 * sz * sizeof(uint64_t));
+  prg.random_data_unaligned(xv.data(), 2 * sz * sizeof(uint64_t));
   uint64_t sum = 0;
   for (int i = 0; i < sz; ++i) {
     xv[i] %= PR; xv[sz + i] %= PR;

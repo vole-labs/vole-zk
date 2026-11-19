@@ -76,16 +76,16 @@ public:
   template <typename PRNG> static uint64_t sample(PRNG &prg) {
     uint64_t raw;
     do {
-      prg.random_data(&raw, sizeof(uint64_t));
+      prg.random_data_unaligned(&raw, sizeof(uint64_t));
       raw &= PR_mask;
     } while (raw >= PR);
     return raw;
   }
   template <typename PRNG> static void sample_many(PRNG &prg, uint64_t *out, std::size_t cnt) {
-    prg.random_data(out, (int64_t)(cnt * sizeof(uint64_t)));
+    prg.random_data_unaligned(out, (int64_t)(cnt * sizeof(uint64_t)));
     for (std::size_t i = 0; i < cnt; ++i) {
       out[i] &= PR_mask;
-      while (out[i] >= PR) { prg.random_data(&out[i], sizeof(uint64_t)); out[i] &= PR_mask; }
+      while (out[i] >= PR) { prg.random_data_unaligned(&out[i], sizeof(uint64_t)); out[i] &= PR_mask; }
     }
   }
   // Uniform element from a hash digest (Fiat-Shamir): low word of dig[0]

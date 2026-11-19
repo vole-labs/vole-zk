@@ -37,7 +37,7 @@ void run_circuit(BoolIO *io, int party, const char *tag) {
   I a(3ULL, ALICE), b(5ULL, ALICE), c(11ULL, PUBLIC);
   I d = a * b + c * 2ULL - a;
   // expected values in the field itself (GF(2^128): + is XOR, * carry-less)
-  FP e = FP(3ULL) * FP(5ULL) + FP(11ULL) * FP(2ULL) - FP(3ULL);
+  FP e = FP(uint64_t{3}) * FP(uint64_t{5}) + FP(uint64_t{11}) * FP(uint64_t{2}) - FP(uint64_t{3});
   FP e2 = e * e;
   if constexpr (uses_fp61_engine<FP, FPS>) {
     d.reveal((uint64_t)e.val);

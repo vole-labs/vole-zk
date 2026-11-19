@@ -30,7 +30,7 @@ void run(BoolIO *io, BoolIO *vole_io, int party, const string &tag, const string
 
   FP my_delta;
   const FP *dptr = nullptr;
-  if (mode == "delta") { my_delta = FP(0x1234567ULL) * FP(0x89abcdefULL) + FP(3); dptr = &my_delta; }
+  if (mode == "delta") { my_delta = FP(uint64_t{0x1234567}) * FP(uint64_t{0x89abcdef}) + FP(3); dptr = &my_delta; }
   setup_zk_arith_generic<FP, FPS>(io, party, threads, mode == "bg" ? vole_io : nullptr, -1,
                                   party == BOB ? dptr : nullptr);
   auto *ex = ZKFieldExec<FP, FPS>::zk_exec;
@@ -56,8 +56,8 @@ void run(BoolIO *io, BoolIO *vole_io, int party, const string &tag, const string
     I u = t * b;
     (void)u;
   }
-  FP er = ar * br + cr * FP(7ULL) - br.negate() + FP(5ULL) - ar;
-  I e = a * b + c * FP(7ULL) - b.negate() + FP(5ULL) - a;
+  FP er = ar * br + cr * FP(uint64_t{7}) - br.negate() + FP(uint64_t{5}) - ar;
+  I e = a * b + c * FP(uint64_t{7}) - b.negate() + FP(uint64_t{5}) - a;
   e.reveal(er);
   FP got = a.reveal();
   if (got != ar) error("scalar reveal value mismatch");

@@ -41,8 +41,8 @@ void bench_fp61(BoolIO *io, Meter &m, int threads) {
   const int64_t N = m.N;
   PRG prg;
   vector<uint64_t> xv(N), yv(N);
-  prg.random_data(xv.data(), N * 8);
-  prg.random_data(yv.data(), N * 8);
+  prg.random_data_unaligned(xv.data(), N * 8);
+  prg.random_data_unaligned(yv.data(), N * 8);
   for (int64_t i = 0; i < N; ++i) { xv[i] %= PR; yv[i] %= PR; }
   m.start(); setup_zk_arith(io, m.party, threads); m.stop("setup", 0);
   m.start(); IntFpVec x(xv.data(), N, ALICE), y(yv.data(), N, ALICE); m.stop("input", 2 * N);

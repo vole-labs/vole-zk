@@ -18,7 +18,7 @@ inline void prg_coeff_gen_zk(uint64_t *coeff, uint64_t seed, int64_t n) {
   for (int64_t b = 0; b * B < n; ++b) {
     block sb = makeBlock(seed ^ 0x9e3779b97f4a7c15ULL, (uint64_t)b);
     PRG prg(&sb);
-    prg.random_data(w.data(), (int)(B * 8));
+    prg.random_data_unaligned(w.data(), (int)(B * 8));
     const int64_t base = b * B;
     const int64_t m = (n - base) < B ? (n - base) : B;
     for (int64_t j = 0; j < m; ++j) coeff[base + j] = mod(w[(size_t)j]);

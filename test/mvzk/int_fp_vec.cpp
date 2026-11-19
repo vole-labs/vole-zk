@@ -27,7 +27,7 @@ int main(int argc, char **argv) {
   std::vector<uint64_t> x(len), y(len), c(len);
   block seed = makeBlock(0x766563ULL, 0x696e745f6670ULL);
   PRG prg(&seed);
-  prg.random_data(x.data(), len * 8); prg.random_data(y.data(), len * 8); prg.random_data(c.data(), len * 8);
+  prg.random_data_unaligned(x.data(), len * 8); prg.random_data_unaligned(y.data(), len * 8); prg.random_data_unaligned(c.data(), len * 8);
   for (auto &v : x) v %= FP59::PR;
   for (auto &v : y) v %= FP59::PR;
   for (auto &v : c) v %= FP59::PR;

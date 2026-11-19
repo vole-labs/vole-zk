@@ -19,8 +19,8 @@ void test_int_fp_vec(BoolIO *io, int party, int64_t len, int threads) {
   block seed = makeBlock(0x1234567, 0x89abcdef);
   PRG prg(&seed);
   std::vector<uint64_t> av(len), bv(len), exp_mul(len), exp_add(len), exp_sub(len);
-  prg.random_data(av.data(), len * sizeof(uint64_t));
-  prg.random_data(bv.data(), len * sizeof(uint64_t));
+  prg.random_data_unaligned(av.data(), len * sizeof(uint64_t));
+  prg.random_data_unaligned(bv.data(), len * sizeof(uint64_t));
   for (int64_t i = 0; i < len; ++i) {
     av[i] %= PR;
     bv[i] %= PR;

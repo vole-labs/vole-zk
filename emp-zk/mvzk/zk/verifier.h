@@ -404,7 +404,9 @@ public:
     std::vector<uint8_t> msg(cnt * T::size() + sizeof(block));
     T *o = reinterpret_cast<T *>(msg.data());
     for (std::size_t c = 0; c < cnt; ++c) o[c] = o_in[c] + theta[c];
-    prg.random_block(reinterpret_cast<block *>(msg.data() + cnt * T::size()), 1);
+    block salt;  // the commitment salt sits at a byte offset, not 16-aligned
+    prg.random_block(&salt, 1);
+    memcpy(msg.data() + cnt * T::size(), &salt, sizeof(block));
     block com[2];
     Hash::hash_once(com, msg.data(), (int64_t)msg.size());
     std::vector<std::vector<uint8_t>> coms, got;

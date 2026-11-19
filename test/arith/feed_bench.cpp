@@ -21,7 +21,7 @@ void bench(BoolIO *io, BoolIO *vio, int party, int threads, int64_t sz,
   PRG prg(&seed);
   vector<uint64_t> w(sz);
   vector<IntFp> x(sz);
-  prg.random_data(w.data(), sz * sizeof(uint64_t));
+  prg.random_data_unaligned(w.data(), sz * sizeof(uint64_t));
   for (int64_t i = 0; i < sz; ++i) w[i] %= PR;
 
   batch_feed(x.data(), w.data(), sz);   // warmup (prime the pipe / rounds)

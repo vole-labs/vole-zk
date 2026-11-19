@@ -29,8 +29,8 @@ void test_bg(BoolIO *io, BoolIO *vole_io, int party, int64_t N, int threads,
   block seed = makeBlock(0x0abcdef, 0x1234567);
   PRG prg(&seed);
   vector<uint64_t> av(N), bv(N), exp_prod(N);
-  prg.random_data(av.data(), N * sizeof(uint64_t));
-  prg.random_data(bv.data(), N * sizeof(uint64_t));
+  prg.random_data_unaligned(av.data(), N * sizeof(uint64_t));
+  prg.random_data_unaligned(bv.data(), N * sizeof(uint64_t));
   for (int64_t i = 0; i < N; ++i) {
     av[i] %= PR;
     bv[i] %= PR;

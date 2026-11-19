@@ -17,7 +17,7 @@ int main() {
   int bad = 0;
   // ---- FP59 scalar ----
   for (int it = 0; it < 200000; ++it) {
-    uint64_t a, b; prg.random_data(&a, 8); prg.random_data(&b, 8);
+    uint64_t a, b; prg.random_data_unaligned(&a, 8); prg.random_data_unaligned(&b, 8);
     FP59 fa(a), fb(b);
     if (fa.val != a % FP59::PR || fb.val != b % FP59::PR) { ++bad; break; }
     if ((fa * fb).val != ref_mul(fa.val, fb.val)) { ++bad; break; }
@@ -49,8 +49,8 @@ int main() {
   }
   // ---- FP59x2 lanes ----
   for (int it = 0; it < 100000 && !bad; ++it) {
-    uint64_t a0, a1, b0, b1, c; prg.random_data(&a0, 8); prg.random_data(&a1, 8);
-    prg.random_data(&b0, 8); prg.random_data(&b1, 8); prg.random_data(&c, 8);
+    uint64_t a0, a1, b0, b1, c; prg.random_data_unaligned(&a0, 8); prg.random_data_unaligned(&a1, 8);
+    prg.random_data_unaligned(&b0, 8); prg.random_data_unaligned(&b1, 8); prg.random_data_unaligned(&c, 8);
     FP59x2 A{FP59(a0), FP59(a1)}, B{FP59(b0), FP59(b1)}; FP59 C(c);
     FP59x2 m = A * C;
     if (m.getLow().val != ref_mul(FP59(a0).val, C.val) || m.getHigh().val != ref_mul(FP59(a1).val, C.val)) { ++bad; break; }

@@ -27,7 +27,7 @@ int main(int argc, char **argv) {
   std::vector<uint64_t> wa(N), wb(N), wc(N, 0);
   block seed = makeBlock(0x6d767a6bULL, 0x696e745f6670ULL);   // fixed test seed
   PRG prg(&seed);
-  prg.random_data(wa.data(), N * 8); prg.random_data(wb.data(), N * 8);
+  prg.random_data_unaligned(wa.data(), N * 8); prg.random_data_unaligned(wb.data(), N * 8);
   for (auto &x : wa) x %= FP59::PR;
   for (auto &x : wb) x %= FP59::PR;
   for (std::size_t i = 0; i < dim; ++i)
