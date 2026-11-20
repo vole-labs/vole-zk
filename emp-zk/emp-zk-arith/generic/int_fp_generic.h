@@ -13,7 +13,8 @@
 //                        engine (also for FP61; used to compare against it)
 //
 // FP / FPS are vole's single-element and value||MAC types:
-//   FP61/FP61x2, FP107/FP107x2, FP192/FP192x2 (prime fields) and
+//   FP61/FP61x2, FP107/FP107x2, FP192/FP192x2, FP25519/FP25519x2,
+//   FPP256/FPP256x2 (prime fields) and
 //   FP2x128/FP2x128x2 (GF(2^128)). Values are FP; uint64_t inputs are accepted
 // and mapped with FP(uint64_t).
 

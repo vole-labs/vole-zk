@@ -24,6 +24,8 @@ using namespace std;
 static_assert(std::is_same_v<IntFpT<FP61, FP61x2>, IntFp>, "FP61 -> tuned engine");
 static_assert(std::is_same_v<IntFpVecT<FP61, FP61x2>, IntFpVec>, "FP61 -> tuned engine");
 static_assert(std::is_same_v<IntFpT<FP192, FP192x2>, IntFpG<FP192, FP192x2>>, "p192 -> generic");
+static_assert(std::is_same_v<IntFpT<FP25519, FP25519x2>, IntFpG<FP25519, FP25519x2>>, "p25519 -> generic");
+static_assert(std::is_same_v<IntFpT<FPP256, FPP256x2>, IntFpG<FPP256, FPP256x2>>, "p256 -> generic");
 static_assert(std::is_same_v<IntFpT<FP107, FP107x2>, IntFpG<FP107, FP107x2>>, "fp107 -> generic");
 static_assert(std::is_same_v<IntFpT<FP2x128, FP2x128x2>, IntFpG<FP2x128, FP2x128x2>>, "f2k -> generic");
 
@@ -95,6 +97,8 @@ int main(int argc, char **argv) {
     run_circuit<FP61, FP61x2>(&io, party, "fp61");
     run_circuit<FP107, FP107x2>(&io, party, "fp107");
     run_circuit<FP192, FP192x2>(&io, party, "p192");
+    run_circuit<FP25519, FP25519x2>(&io, party, "p25519");
+    run_circuit<FPP256, FPP256x2>(&io, party, "p256");
     run_circuit<FP2x128, FP2x128x2>(&io, party, "f2k");
   }
   link_f2k(&io, party, mode == "cheat_link");

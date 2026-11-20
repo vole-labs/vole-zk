@@ -3,7 +3,7 @@
 
 // Field-generic QuickSilver core: authenticated inputs, multiplication gates
 // with the batched multiplication check, and output opening, over any field
-// type from vole-labs/vole (FP61, FP107, FP192, FP2x128, ...). Same protocol
+// type from vole-labs/vole (FP61, FP107, FP192, FP25519, FPP256, FP2x128, ...). Same protocol
 // and message flow as the FP61 engine (emp-zk-arith/ostriple.h), written with
 // the field's operators instead of packed 64-bit arithmetic.
 //

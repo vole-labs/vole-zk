@@ -1,7 +1,7 @@
 // Field-generic arithmetic ZK (emp-zk-arith/generic/) over vole's fields.
 //
 // usage: test_arith_field_zk <party> <field> [mode] [log2 N] [threads]
-//   field: fp61g (generic engine on FP61) | fp107 | p192 | f2k (GF(2^128))
+//   field: fp61g (generic engine on FP61) | fp107 | p192 | p25519 | p256 | f2k (GF(2^128))
 //   mode:  honest (default)  circuit + vector ops + polynomial proofs + opening
 //          bg                honest, VOLE on a second socket (background producer)
 //          delta             honest, verifier supplies its own Delta
@@ -133,7 +133,9 @@ int main(int argc, char **argv) {
   if (field == "fp61g")      run<FP61, FP61x2>(&io, vole_io.get(), party, field, mode, N, threads);
   else if (field == "fp107") run<FP107, FP107x2>(&io, vole_io.get(), party, field, mode, N, threads);
   else if (field == "p192")  run<FP192, FP192x2>(&io, vole_io.get(), party, field, mode, N, threads);
+  else if (field == "p25519") run<FP25519, FP25519x2>(&io, vole_io.get(), party, field, mode, N, threads);
+  else if (field == "p256")  run<FPP256, FPP256x2>(&io, vole_io.get(), party, field, mode, N, threads);
   else if (field == "f2k")   run<FP2x128, FP2x128x2>(&io, vole_io.get(), party, field, mode, N, threads);
-  else error("unknown field: fp61g | fp107 | p192 | f2k");
+  else error("unknown field: fp61g | fp107 | p192 | p25519 | p256 | f2k");
   return 0;
 }

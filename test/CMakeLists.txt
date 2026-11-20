@@ -68,7 +68,7 @@ add_test(NAME arith_field_select COMMAND ${PROJECT_SOURCE_DIR}/run $<TARGET_FILE
 add_test(NAME arith_field_select_cheat_link COMMAND ${PROJECT_SOURCE_DIR}/run $<TARGET_FILE:test_arith_field_select> cheat_link
          WORKING_DIRECTORY ${PROJECT_SOURCE_DIR})
 set_tests_properties(arith_field_select_cheat_link PROPERTIES WILL_FAIL TRUE TIMEOUT 300)
-foreach(_f fp61g fp107 p192 f2k)
+foreach(_f fp61g fp107 p192 p25519 p256 f2k)
     foreach(_m honest bg delta cheat_mul cheat_reveal cheat_poly cheat_deg2)
         add_test(NAME arith_field_${_f}_${_m}
                  COMMAND ${PROJECT_SOURCE_DIR}/run $<TARGET_FILE:test_arith_field_zk> ${_f} ${_m}

@@ -2,7 +2,7 @@
 //
 // usage: bench_arith_field <party> <field> [log2 N] [threads]
 //   field: fp61  (tuned FP61 engine, IntFp)
-//          fp61g (generic engine on FP61) | fp107 | p192 | f2k (generic engine)
+//          fp61g (generic engine on FP61) | fp107 | p192 | p25519 | p256 | f2k (generic engine)
 // Phases (N elements each; times in ms on this party, bytes = primary socket
 // sent + received during the phase):
 //   setup   engine setup, incl. the first VOLE batch
@@ -95,7 +95,9 @@ int main(int argc, char **argv) {
   else if (field == "fp61g") bench_generic<FP61, FP61x2>(&io, m, threads);
   else if (field == "fp107") bench_generic<FP107, FP107x2>(&io, m, threads);
   else if (field == "p192")  bench_generic<FP192, FP192x2>(&io, m, threads);
+  else if (field == "p25519") bench_generic<FP25519, FP25519x2>(&io, m, threads);
+  else if (field == "p256")  bench_generic<FPP256, FPP256x2>(&io, m, threads);
   else if (field == "f2k")   bench_generic<FP2x128, FP2x128x2>(&io, m, threads);
-  else error("unknown field: fp61 | fp61g | fp107 | p192 | f2k");
+  else error("unknown field: fp61 | fp61g | fp107 | p192 | p25519 | p256 | f2k");
   return 0;
 }
