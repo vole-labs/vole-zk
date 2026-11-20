@@ -25,7 +25,7 @@ struct Meter {
   const char *tag;
   int64_t N;
   uint64_t b0 = 0;
-  time_point<high_resolution_clock> t0;
+  decltype(clock_start()) t0;
   void start() { b0 = nio->send_counter + nio->recv_counter; t0 = clock_start(); }
   void stop(const char *phase, int64_t per) {
     double ms = time_from(t0) / 1000.0;
