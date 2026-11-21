@@ -35,6 +35,10 @@ public:
   void operator=(const FP59 rhs) { this->val = rhs.val; }
 
   void setZero() { this->val = 0ULL; }
+
+  // Whether this encoding is the canonical one (a peer may send any bytes);
+  // vole's protocol checks reject anything else (require_canonical).
+  bool canonical() const { return val < PR; }
   void from_block(block rhs) { this->val = mod((uint64_t)_mm_extract_epi64(rhs, 0)); }
   void assign_no_mod(const uint64_t rhs) { this->val = rhs; }
   uint64_t value() const { return val; }
